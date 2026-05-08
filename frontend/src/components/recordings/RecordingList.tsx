@@ -1,7 +1,20 @@
-import { Music } from 'lucide-react';
+import { useState } from 'react';
+import { Music, ChevronDown } from 'lucide-react';
 import { useRecordings, type ListFilter } from '@/api/recordings';
 import { RecordingCard, type RecordingWithTags } from './RecordingCard';
 import { Card } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
+
+interface DayGroup {
+  dateKey: string;
+  label: string;
+  recordings: RecordingWithTags[];
+}
+
+interface MonthGroup {
+  label: string;
+  days: DayGroup[];
+}
 
 interface RecordingListProps {
   filter: ListFilter;
@@ -54,34 +67,87 @@ export function RecordingList({ filter }: RecordingListProps) {
     );
   }
 
-  const grouped = recordings.reduce((acc: Record<string, RecordingWithTags[]>, rec) => {
-    const d = new Date(rec.recorded_at);
-    const key = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(d);
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(rec);
-    return acc;
-  }, {});
+  const monthFmt = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' });
+  const dayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  const groupKeys = Object.keys(grouped).sort((a, b) => {
-    const timeA = new Date(grouped[a][0].recorded_at).getTime();
-    const timeB = new Date(grouped[b][0].recorded_at).getTime();
+  const months: Record<string, MonthGroup> = {};
+
+  for (const rec of recordings) {
+    const d = new Date(rec.recorded_at);
+    const monthKey = monthFmt.format(d);
+    const dateKey = d.toISOString().slice(0, 10);
+    const dayLabel = dayFmt.format(d);
+
+    if (!months[monthKey]) months[monthKey] = { label: monthKey, days: [] };
+    const month = months[monthKey];
+    let day = month.days.find((g) => g.dateKey === dateKey);
+    if (!day) {
+      day = { dateKey, label: dayLabel, recordings: [] };
+      month.days.push(day);
+    }
+    day.recordings.push(rec);
+  }
+
+  const sortedMonths = Object.values(months).sort((a, b) => {
+    const timeA = new Date(a.days[0].recordings[0].recorded_at).getTime();
+    const timeB = new Date(b.days[0].recordings[0].recorded_at).getTime();
     return timeB - timeA;
   });
 
+  for (const month of sortedMonths) {
+    month.days.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+  }
+
   return (
     <div className="space-y-8">
-      {groupKeys.map((group) => (
-        <div key={group} className="space-y-3">
+      {sortedMonths.map((month) => (
+        <div key={month.label} className="space-y-3">
           <h2 className="text-sm font-medium text-muted-foreground tracking-wider uppercase ml-1">
-            {group}
+            {month.label}
           </h2>
-          <div className="grid gap-3">
-            {grouped[group].map((recording) => (
-              <RecordingCard key={recording.id} recording={recording} />
+          <div className="space-y-2">
+            {month.days.map((day) => (
+              <DayDropdown key={day.dateKey} day={day} />
             ))}
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+interface DayDropdownProps {
+  day: DayGroup;
+}
+
+function DayDropdown({ day }: DayDropdownProps) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div className="rounded-lg border bg-card/50">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium hover:bg-muted/50 transition-colors rounded-lg"
+      >
+        <ChevronDown
+          className={cn(
+            'w-4 h-4 text-muted-foreground transition-transform duration-200',
+            !open && '-rotate-90',
+          )}
+        />
+        <span className="text-base font-semibold">{day.label}</span>
+        <span className="text-xs text-muted-foreground ml-auto">
+          {day.recordings.length} {day.recordings.length === 1 ? 'recording' : 'recordings'}
+        </span>
+      </button>
+      {open && (
+        <div className="grid gap-3 px-3 pb-3">
+          {day.recordings.map((recording) => (
+            <RecordingCard key={recording.id} recording={recording} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
