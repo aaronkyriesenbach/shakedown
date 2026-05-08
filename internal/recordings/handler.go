@@ -167,7 +167,7 @@ func (h *Handler) listRecordings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	pageSize := 20
-	if ps := q.Get("page_size"); ps != "" {
+	if ps := q.Get("limit"); ps != "" {
 		if n, err := strconv.Atoi(ps); err == nil {
 			pageSize = n
 		}
@@ -175,7 +175,7 @@ func (h *Handler) listRecordings(w http.ResponseWriter, r *http.Request) {
 
 	filter := ListFilter{
 		TagID:    q.Get("tag"),
-		Query:    q.Get("q"),
+		Query:    q.Get("search"),
 		From:     q.Get("from"),
 		To:       q.Get("to"),
 		Sort:     q.Get("sort"),

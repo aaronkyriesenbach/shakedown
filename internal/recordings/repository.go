@@ -175,10 +175,10 @@ type ListFilter struct {
 
 // ListResult contains paginated results.
 type ListResult struct {
-	Recordings []*Recording `json:"recordings"`
+	Recordings []*Recording `json:"data"`
 	Total      int          `json:"total"`
 	Page       int          `json:"page"`
-	PageSize   int          `json:"page_size"`
+	PageSize   int          `json:"limit"`
 }
 
 // List returns paginated, filterable recordings.
