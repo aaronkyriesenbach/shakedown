@@ -53,15 +53,9 @@ RUN addgroup --gid 1000 shakedown \
 # Copy binary from go-builder
 COPY --from=go-builder /shakedown /shakedown
 
-# Create audio data directory and set ownership
-RUN mkdir -p /data/audio && chown -R 1000:1000 /data
-
-# Declare data volume
-VOLUME ["/data"]
+RUN mkdir -p /data && chown -R 1000:1000 /data
 
 USER 1000
-
-# Set workdir after switching to non-root user
 WORKDIR /home/shakedown
 
 EXPOSE 8080

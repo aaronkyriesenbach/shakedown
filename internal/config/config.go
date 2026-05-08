@@ -12,7 +12,7 @@ type Config struct {
 
 	DatabaseURL string `envconfig:"DATABASE_URL" required:"true"`
 
-	StorageRoot string `envconfig:"STORAGE_ROOT" default:"/data/audio"`
+	StorageRoot string `envconfig:"STORAGE_ROOT" default:"/data"`
 
 	DisableAuth      bool   `envconfig:"DISABLE_AUTH" default:"false"`
 	OIDCIssuer       string `envconfig:"OIDC_ISSUER"`
