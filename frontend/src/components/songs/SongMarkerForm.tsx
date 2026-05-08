@@ -104,39 +104,52 @@ export function SongMarkerForm({ recordingId, song, currentTime, onClose }: Song
       
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="start">Start (seconds) *</Label>
+          <Label htmlFor="start">Start (seconds) *</Label>
+          <div className="relative">
+            <Input 
+              id="start" 
+              type="number" 
+              step="1"
+              min="0"
+              value={startSeconds} 
+              onChange={(e) => setStartSeconds(e.target.value)}
+              className={currentTime !== undefined ? 'pr-20' : ''}
+            />
             {currentTime !== undefined && (
               <button
                 type="button"
                 onClick={() => setStartSeconds(currentTime.toFixed(0))}
-                className="text-xs text-primary hover:underline"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-primary hover:underline"
               >
                 Use current
               </button>
             )}
           </div>
-          <Input 
-            id="start" 
-            type="number" 
-            step="1"
-            min="0"
-            value={startSeconds} 
-            onChange={(e) => setStartSeconds(e.target.value)} 
-          />
         </div>
         
         <div className="space-y-1.5">
           <Label htmlFor="end">End (seconds)</Label>
-          <Input 
-            id="end" 
-            type="number" 
-            step="1"
-            min="0"
-            value={endSeconds} 
-            onChange={(e) => setEndSeconds(e.target.value)} 
-            placeholder="Optional"
-          />
+          <div className="relative">
+            <Input 
+              id="end" 
+              type="number" 
+              step="1"
+              min="0"
+              value={endSeconds} 
+              onChange={(e) => setEndSeconds(e.target.value)} 
+              placeholder="Optional"
+              className={currentTime !== undefined ? 'pr-20' : ''}
+            />
+            {currentTime !== undefined && (
+              <button
+                type="button"
+                onClick={() => setEndSeconds(currentTime.toFixed(0))}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-primary hover:underline"
+              >
+                Use current
+              </button>
+            )}
+          </div>
         </div>
       </div>
       
