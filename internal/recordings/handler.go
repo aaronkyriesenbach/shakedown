@@ -101,26 +101,37 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	tmpFile.Close()
 
-	now := time.Now().UTC()
-	title := r.FormValue("title")
-	if title == "" {
-		count, err := h.svc.repo.CountAll(r.Context())
-		if err != nil {
-			h.logger.Error("failed to count recordings", zap.Error(err))
-			count = 0
+	recordedAt := time.Now().UTC()
+	recordedAtSource := "upload_timestamp"
+
+	probeResult, probeErr := runFFprobe(r.Context(), tmpPath)
+	if probeErr == nil {
+		if tagDate := parseDateFromTags(probeResult.Format.Tags); !tagDate.IsZero() {
+			recordedAt = tagDate
+			recordedAtSource = "embedded_tags"
 		}
-		title = fmt.Sprintf("Recording #%d %s", count+1, now.Format("2006-01-02"))
 	}
 
+	if recordedAtSource == "upload_timestamp" {
+		if formDate := r.FormValue("recorded_at"); formDate != "" {
+			if t, err := time.Parse("2006-01-02", formDate); err == nil {
+				recordedAt = t.UTC()
+				recordedAtSource = "user_set"
+			}
+		}
+	}
+
+	title := r.FormValue("title")
+
 	rec, err := h.svc.repo.Create(r.Context(), CreateRecordingInput{
-		Title:   title,
-		FileExt: ext,
+		Title:            title,
+		FileExt:          ext,
 		FileSizeBytes:    written,
 		MimeType:         mimeType,
 		StoragePath:      "",
 		UploadedBy:       user.ID,
-		RecordedAt:       now,
-		RecordedAtSource: "upload_timestamp",
+		RecordedAt:       recordedAt,
+		RecordedAtSource: recordedAtSource,
 	})
 	if err != nil {
 		h.logger.Error("failed to create recording record", zap.Error(err))

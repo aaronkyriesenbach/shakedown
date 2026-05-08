@@ -58,8 +58,15 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 }
 
 // Create inserts a new recording into the database.
+// When input.Title is empty, it atomically assigns the next sequential
+// recording number using an advisory lock so concurrent uploads never collide.
 func (repo *Repository) Create(ctx context.Context, input CreateRecordingInput) (*Recording, error) {
 	id := uuid.New().String()
+
+	if input.Title == "" {
+		return repo.createWithAutoTitle(ctx, id, input)
+	}
+
 	var rec Recording
 	err := repo.db.QueryRow(ctx, `
 		INSERT INTO recordings (id, title, file_ext, file_size_bytes, mime_type,
@@ -82,6 +89,57 @@ func (repo *Repository) Create(ctx context.Context, input CreateRecordingInput) 
 	if err != nil {
 		return nil, fmt.Errorf("recordings: failed to create: %w", err)
 	}
+	return &rec, nil
+}
+
+// createWithAutoTitle generates a unique sequential title inside a transaction
+// guarded by a PostgreSQL advisory lock, then inserts the recording.
+func (repo *Repository) createWithAutoTitle(ctx context.Context, id string, input CreateRecordingInput) (*Recording, error) {
+	tx, err := repo.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("recordings: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Serialize concurrent auto-title generation.
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", int64(0x7368616B65)); err != nil {
+		return nil, fmt.Errorf("recordings: advisory lock: %w", err)
+	}
+
+	var count int
+	if err := tx.QueryRow(ctx, "SELECT COUNT(*) FROM recordings WHERE deleted_at IS NULL").Scan(&count); err != nil {
+		return nil, fmt.Errorf("recordings: count for auto-title: %w", err)
+	}
+
+	input.Title = fmt.Sprintf("Recording #%d %s", count+1, input.RecordedAt.Format("2006-01-02"))
+
+	var rec Recording
+	err = tx.QueryRow(ctx, `
+		INSERT INTO recordings (id, title, file_ext, file_size_bytes, mime_type,
+			storage_path, uploaded_by, recorded_at, recorded_at_source)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, title, file_ext, file_size_bytes, mime_type,
+			storage_path, uploaded_by, recorded_at, recorded_at_source,
+			duration_seconds, bitrate, sample_rate, channels,
+			playback_ready, waveform_ready, processing_error, processing_step,
+			created_at, updated_at, deleted_at
+	`, id, input.Title, input.FileExt, input.FileSizeBytes, input.MimeType,
+		input.StoragePath, input.UploadedBy, input.RecordedAt, input.RecordedAtSource,
+	).Scan(
+		&rec.ID, &rec.Title, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
+		&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
+		&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
+		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
+		&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("recordings: failed to create: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("recordings: commit: %w", err)
+	}
+
 	return &rec, nil
 }
 

@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import Uppy, { type Meta, type Body } from '@uppy/core';
 import type { UploadResult, UppyFile } from '@uppy/core';
 import XHRUpload from '@uppy/xhr-upload';
 import { toast } from 'sonner';
-import { Upload, X, Music, Loader2 } from 'lucide-react';
+import { Upload, X, Music, Loader2, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 
+import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { formatFileSize } from '@/lib/format';
+import { apiFetch } from '@/api/client';
+import type { Recording } from '@/api/recordings';
 
 interface UploadMeta extends Meta {
   title?: string;
@@ -22,8 +25,14 @@ interface RecordingBody extends Body {
   playback_ready: boolean;
 }
 
+type UploadResultType = {
+  id?: string;
+  title?: string;
+  filename: string;
+  success: boolean;
+};
+
 export function UploadForm() {
-  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [recordedAt, setRecordedAt] = useState<string>(() => {
     const today = new Date();
@@ -33,6 +42,8 @@ export function UploadForm() {
   const [fileTitles, setFileTitles] = useState<Record<string, string>>({});
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadResults, setUploadResults] = useState<UploadResultType[] | null>(null);
+  const [polledRecordings, setPolledRecordings] = useState<Record<string, Recording>>({});
 
   const [uppy] = useState(() => {
     const u = new Uppy<UploadMeta, RecordingBody>({
@@ -66,17 +77,21 @@ export function UploadForm() {
       const successful = result.successful ?? [];
       const failed = result.failed ?? [];
 
+      const newResults: UploadResultType[] = [];
+
       successful.forEach((file: UppyFile<UploadMeta, RecordingBody>) => {
         toast.success(`Uploaded ${file.name} successfully`);
         const id = file.response?.body?.id;
-        if (id) {
-          navigate(`/recordings/${id}`);
-        }
+        const title = file.response?.body?.title;
+        newResults.push({ id, title, filename: file.name, success: true });
       });
 
       failed.forEach((file: UppyFile<UploadMeta, RecordingBody>) => {
         toast.error(`Failed to upload ${file.name}`);
+        newResults.push({ filename: file.name, success: false });
       });
+
+      setUploadResults(newResults);
     };
 
     uppy.on('upload', handleUploadStart);
@@ -89,11 +104,54 @@ export function UploadForm() {
       uppy.off('upload', handleUploadStart);
       uppy.off('complete', handleComplete);
     };
-  }, [uppy, navigate, syncFiles]);
+  }, [uppy, syncFiles]);
 
   useEffect(() => {
     uppy.setMeta({ recorded_at: recordedAt });
   }, [uppy, recordedAt]);
+
+  const polledRef = useRef(polledRecordings);
+  polledRef.current = polledRecordings;
+
+  useEffect(() => {
+    if (!uploadResults) return;
+
+    const successfulIds = uploadResults
+      .filter((r) => r.success && r.id)
+      .map((r) => r.id as string);
+
+    if (successfulIds.length === 0) return;
+
+    let cancelled = false;
+
+    const poll = async () => {
+      const pending = successfulIds.filter((id) => {
+        const current = polledRef.current[id];
+        return !current || current.processing_step !== 'complete';
+      });
+      if (pending.length === 0) return;
+
+      for (const id of pending) {
+        if (cancelled) return;
+        try {
+          const recording = await apiFetch<Recording>(`/api/recordings/${id}`);
+          if (!cancelled) {
+            setPolledRecordings((prev) => ({ ...prev, [id]: recording }));
+          }
+        } catch {
+          // retry on next interval
+        }
+      }
+    };
+
+    poll();
+    const interval = setInterval(poll, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [uploadResults]);
 
   const addFiles = useCallback((fileList: FileList | File[]) => {
     Array.from(fileList).forEach((file) => {
@@ -110,192 +168,275 @@ export function UploadForm() {
     });
   }, [uppy]);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files.length > 0) {
+    if (e.dataTransfer.files?.length > 0) {
       addFiles(e.dataTransfer.files);
     }
-  }, [addFiles]);
+  };
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
-  }, []);
+  };
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
+  const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-  }, []);
-
-  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      addFiles(e.target.files);
-      e.target.value = '';
-    }
-  }, [addFiles]);
-
-  const handleTitleChange = (fileId: string, value: string) => {
-    setFileTitles((prev) => ({ ...prev, [fileId]: value }));
-    uppy.setFileMeta(fileId, { title: value.trim() });
   };
 
-  const handleRemoveFile = (fileId: string) => {
-    uppy.removeFile(fileId);
-    setFileTitles((prev) => {
-      const next = { ...prev };
-      delete next[fileId];
-      return next;
-    });
+  const resetForm = () => {
+    uppy.cancelAll();
+    setUploadResults(null);
+    setPolledRecordings({});
+    setFileTitles({});
   };
 
-  const handleUpload = () => {
-    uppy.upload();
-  };
+  if (uploadResults) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col items-center justify-center space-y-4 py-8 px-4 bg-muted/30 rounded-xl border border-dashed">
+          <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center">
+            <CheckCircle2 className="w-6 h-6" />
+          </div>
+          <div className="text-center">
+            <h3 className="text-lg font-medium">Upload Complete</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              {uploadResults.filter(r => r.success).length} of {uploadResults.length} files uploaded successfully.
+            </p>
+          </div>
+          <Button onClick={resetForm} variant="outline" className="mt-2">
+            <Upload className="w-4 h-4 mr-2" />
+            Upload more
+          </Button>
+        </div>
 
-  const openFilePicker = () => {
-    fileInputRef.current?.click();
-  };
+        <div className="space-y-3">
+          <h4 className="text-sm font-medium">Results</h4>
+          <div className="space-y-2">
+            {uploadResults.map((result, i) => {
+              const recording = result.id ? polledRecordings[result.id] : null;
+              const title = recording?.title || result.title || result.filename;
+              
+              return (
+                <div key={`${result.filename}-${i}`} className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <div className="bg-muted w-10 h-10 rounded-md flex items-center justify-center shrink-0">
+                      <Music className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      {result.success && result.id ? (
+                        <Link to={`/recordings/${result.id}`} className="font-medium text-sm truncate hover:underline block">
+                          {title}
+                        </Link>
+                      ) : (
+                        <p className="font-medium text-sm truncate">{title}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground truncate">{result.filename}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="ml-4 shrink-0">
+                    {!result.success ? (
+                      <Badge variant="destructive" className="flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        Upload Failed
+                      </Badge>
+                    ) : recording?.processing_error ? (
+                      <Badge variant="destructive" className="flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        Error
+                      </Badge>
+                    ) : !recording || recording.processing_step !== 'complete' ? (
+                      <Badge variant="secondary" className="bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-amber-500/20 flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        {recording?.processing_step === 'queued' ? 'Queued' :
+                         recording?.processing_step === 'analyzing' ? 'Analyzing' :
+                         recording?.processing_step === 'transcoding' ? 'Transcoding' :
+                         recording?.processing_step === 'generating_waveform' ? 'Generating waveform' : 'Processing'}
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-emerald-500/20 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        Ready
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <Label htmlFor="recorded_at">Recording Date</Label>
-        <Input
-          id="recorded_at"
-          type="date"
-          value={recordedAt}
-          onChange={(e) => setRecordedAt(e.target.value)}
-          className="max-w-xs"
-        />
+      <div className="space-y-4">
+        <div className="grid gap-2">
+          <Label htmlFor="date">Recording Date</Label>
+          <Input
+            id="date"
+            type="date"
+            value={recordedAt}
+            onChange={(e) => setRecordedAt(e.target.value)}
+            disabled={isUploading}
+          />
+        </div>
+
+        <div
+          className={`
+            border-2 border-dashed rounded-xl p-8 text-center transition-colors
+            ${isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'}
+            ${isUploading ? 'opacity-50 pointer-events-none' : ''}
+          `}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+        >
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            multiple
+            accept="audio/*"
+            onChange={(e) => {
+              if (e.target.files?.length) {
+                addFiles(e.target.files);
+              }
+              // Reset input so the same file can be selected again
+              e.target.value = '';
+            }}
+          />
+          
+          <div className="mx-auto w-12 h-12 mb-4 bg-muted rounded-full flex items-center justify-center">
+            <Upload className="w-6 h-6 text-muted-foreground" />
+          </div>
+          
+          <h3 className="text-lg font-semibold mb-1">
+            Drag & drop audio files
+          </h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            or click to browse from your computer
+          </p>
+          
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+          >
+            Select Files
+          </Button>
+        </div>
       </div>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="audio/*"
-        multiple
-        onChange={handleFileInput}
-        className="sr-only"
-      />
-
-      {files.length === 0 ? (
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={openFilePicker}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openFilePicker(); }}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          className={`
-            relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-12
-            cursor-pointer transition-colors
-            ${isDragging
-              ? 'border-primary bg-primary/5'
-              : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'
-            }
-          `}
-        >
-          <Upload className="w-10 h-10 text-muted-foreground mb-4" />
-          <p className="text-sm font-medium">
-            Drop audio files here or click to browse
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Supports MP3, WAV, FLAC, and other audio formats
-          </p>
-        </div>
-      ) : (
-        <div
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          className="space-y-3"
-        >
-          {files.map((file) => {
-            const progress = file.progress;
-            const isFileUploading = progress?.uploadStarted && !progress?.uploadComplete;
-            const bytesUploaded: number = Number(progress?.bytesUploaded) || 0;
-            const bytesTotal: number = Number(progress?.bytesTotal) || 0;
-            const uploadPercent = bytesTotal > 0
-              ? Math.round((bytesUploaded / bytesTotal) * 100)
-              : 0;
-
-            return (
-              <div key={file.id} className="rounded-lg border bg-card p-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="bg-muted w-9 h-9 rounded-md flex items-center justify-center shrink-0 text-muted-foreground">
-                    <Music className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{file.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatFileSize(file.size ?? 0)}
-                    </p>
-                  </div>
-                  {!isUploading && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveFile(file.id)}
-                      className="text-muted-foreground hover:text-destructive transition-colors p-1 rounded-md hover:bg-destructive/10"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+      {files.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-medium">Selected Files ({files.length})</h4>
+            {!isUploading && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-muted-foreground"
+                onClick={() => {
+                  uppy.cancelAll();
+                  setFileTitles({});
+                }}
+              >
+                Clear all
+              </Button>
+            )}
+          </div>
+          
+          <div className="space-y-2">
+            {files.map((file) => (
+              <div
+                key={file.id}
+                className="flex items-center gap-3 p-3 bg-card border rounded-lg group relative"
+              >
+                <div className="bg-muted w-10 h-10 rounded-md flex items-center justify-center shrink-0">
+                  <Music className="w-5 h-5 text-muted-foreground" />
+                </div>
+                
+                <div className="flex-1 min-w-0">
+                  {isUploading ? (
+                    <div className="font-medium text-sm truncate">
+                      {fileTitles[file.id] || file.name}
+                    </div>
+                  ) : (
+                    <Input
+                      value={fileTitles[file.id] ?? ''}
+                      onChange={(e) => {
+                        const newTitle = e.target.value;
+                        setFileTitles(prev => ({ ...prev, [file.id]: newTitle }));
+                        uppy.setFileMeta(file.id, { title: newTitle.trim() });
+                      }}
+                      className="h-7 text-sm font-medium border-transparent hover:border-input focus:border-input px-1 -ml-1 bg-transparent"
+                      placeholder="Leave blank for auto-generated title"
+                    />
                   )}
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-muted-foreground">
+                      {formatFileSize(file.size ?? 0)}
+                    </span>
+                    {isUploading && file.progress && (
+                      <span className="text-xs text-primary font-medium">
+                        {file.progress.percentage}%
+                      </span>
+                    )}
+                  </div>
                 </div>
 
-                {isFileUploading && (
-                  <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className="bg-primary h-full rounded-full transition-all duration-300"
-                      style={{ width: `${uploadPercent}%` }}
-                    />
-                  </div>
+                {!isUploading && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-1/2 -translate-y-1/2"
+                    onClick={() => {
+                      uppy.removeFile(file.id);
+                      setFileTitles(prev => {
+                        const next = { ...prev };
+                        delete next[file.id];
+                        return next;
+                      });
+                    }}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
                 )}
 
-                {!isUploading && (
-                  <Input
-                    type="text"
-                    value={fileTitles[file.id] ?? ''}
-                    onChange={(e) => handleTitleChange(file.id, e.target.value)}
-                    placeholder="Recording name (leave blank for auto-generated)"
+                {isUploading && file.progress && (
+                  <div 
+                    className="absolute bottom-0 left-0 h-1 bg-primary rounded-b-lg transition-all duration-300"
+                    style={{ width: `${file.progress.percentage}%` }}
                   />
                 )}
               </div>
-            );
-          })}
-
-          <div className="flex items-center gap-3 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={isUploading}
-              onClick={openFilePicker}
-            >
-              Add more files
-            </Button>
-
-            <div className="flex-1" />
-
-            <Button
-              type="button"
-              onClick={handleUpload}
-              disabled={isUploading || files.length === 0}
-            >
-              {isUploading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Uploading…
-                </>
-              ) : (
-                <>
-                  <Upload className="w-4 h-4" />
-                  Upload {files.length > 1 ? `${files.length} files` : 'file'}
-                </>
-              )}
-            </Button>
+            ))}
           </div>
+
+          <Button
+            className="w-full"
+            size="lg"
+            onClick={() => uppy.upload()}
+            disabled={isUploading}
+          >
+            {isUploading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Uploading...
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4 mr-2" />
+                Upload {files.length} {files.length === 1 ? 'File' : 'Files'}
+              </>
+            )}
+          </Button>
         </div>
       )}
     </div>
