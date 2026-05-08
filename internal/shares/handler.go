@@ -121,7 +121,7 @@ func (h *Handler) DownloadShare(w http.ResponseWriter, r *http.Request) {
     }
     defer f.Close()
 
-    w.Header().Set("Content-Disposition", "attachment; filename=\""+rec.OriginalFilename+"\"")
+    w.Header().Set("Content-Disposition", "attachment; filename=\""+rec.Title+rec.FileExt+"\"")
     w.Header().Set("Content-Type", rec.MimeType)
-    http.ServeContent(w, r, rec.OriginalFilename, rec.UpdatedAt, f)
+    http.ServeContent(w, r, rec.Title+rec.FileExt, rec.UpdatedAt, f)
 }

@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 
 interface UploadMeta extends Meta {
+  title: string;
   recorded_at: string;
 }
 
@@ -24,6 +25,7 @@ interface RecordingBody extends Body {
 
 export function UploadForm() {
   const navigate = useNavigate();
+  const [title, setTitle] = useState('');
   const [recordedAt, setRecordedAt] = useState<string>(() => {
     const today = new Date();
     return today.toISOString().split('T')[0];
@@ -47,8 +49,8 @@ export function UploadForm() {
   });
 
   useEffect(() => {
-    uppy.setMeta({ recorded_at: recordedAt });
-  }, [uppy, recordedAt]);
+    uppy.setMeta({ title: title.trim(), recorded_at: recordedAt });
+  }, [uppy, title, recordedAt]);
 
   useEffect(() => {
     const handleComplete = (result: UploadResult<UploadMeta, RecordingBody>) => {
@@ -79,6 +81,18 @@ export function UploadForm() {
 
   return (
     <div className="space-y-6">
+      <div className="space-y-2">
+        <Label htmlFor="title">Recording Name</Label>
+        <Input
+          id="title"
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Leave blank for auto-generated name"
+          className="max-w-xs"
+        />
+      </div>
+
       <div className="space-y-2">
         <Label htmlFor="recorded_at">Recording Date</Label>
         <Input

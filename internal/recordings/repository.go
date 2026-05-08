@@ -13,10 +13,9 @@ import (
 
 // Recording represents a recording row from the database.
 type Recording struct {
-	ID               string     `json:"id"`
-	Title            string     `json:"title"`
-	OriginalFilename string     `json:"original_filename"`
-	FileExt          string     `json:"file_ext"`
+	ID            string     `json:"id"`
+	Title         string     `json:"title"`
+	FileExt       string     `json:"file_ext"`
 	FileSizeBytes    int64      `json:"file_size_bytes"`
 	MimeType         string     `json:"mime_type"`
 	StoragePath      string     `json:"storage_path"`
@@ -38,9 +37,8 @@ type Recording struct {
 
 // CreateRecordingInput holds the data needed to create a recording.
 type CreateRecordingInput struct {
-	Title            string
-	OriginalFilename string
-	FileExt          string
+	Title     string
+	FileExt   string
 	FileSizeBytes    int64
 	MimeType         string
 	StoragePath      string
@@ -64,18 +62,18 @@ func (repo *Repository) Create(ctx context.Context, input CreateRecordingInput) 
 	id := uuid.New().String()
 	var rec Recording
 	err := repo.db.QueryRow(ctx, `
-		INSERT INTO recordings (id, title, original_filename, file_ext, file_size_bytes, mime_type,
+		INSERT INTO recordings (id, title, file_ext, file_size_bytes, mime_type,
 			storage_path, uploaded_by, recorded_at, recorded_at_source)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		RETURNING id, title, original_filename, file_ext, file_size_bytes, mime_type,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, title, file_ext, file_size_bytes, mime_type,
 			storage_path, uploaded_by, recorded_at, recorded_at_source,
 			duration_seconds, bitrate, sample_rate, channels,
 			playback_ready, waveform_ready, processing_error, processing_step,
 			created_at, updated_at, deleted_at
-	`, id, input.Title, input.OriginalFilename, input.FileExt, input.FileSizeBytes, input.MimeType,
+	`, id, input.Title, input.FileExt, input.FileSizeBytes, input.MimeType,
 		input.StoragePath, input.UploadedBy, input.RecordedAt, input.RecordedAtSource,
 	).Scan(
-		&rec.ID, &rec.Title, &rec.OriginalFilename, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
+		&rec.ID, &rec.Title, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
 		&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
 		&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
 		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
@@ -91,7 +89,7 @@ func (repo *Repository) Create(ctx context.Context, input CreateRecordingInput) 
 func (repo *Repository) GetByID(ctx context.Context, id string) (*Recording, error) {
 	var rec Recording
 	err := repo.db.QueryRow(ctx, `
-		SELECT id, title, original_filename, file_ext, file_size_bytes, mime_type,
+		SELECT id, title, file_ext, file_size_bytes, mime_type,
 			storage_path, uploaded_by, recorded_at, recorded_at_source,
 			duration_seconds, bitrate, sample_rate, channels,
 			playback_ready, waveform_ready, processing_error, processing_step,
@@ -99,7 +97,7 @@ func (repo *Repository) GetByID(ctx context.Context, id string) (*Recording, err
 		FROM recordings
 		WHERE id = $1 AND deleted_at IS NULL
 	`, id).Scan(
-		&rec.ID, &rec.Title, &rec.OriginalFilename, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
+		&rec.ID, &rec.Title, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
 		&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
 		&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
 		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
@@ -233,7 +231,7 @@ func (repo *Repository) List(ctx context.Context, f ListFilter) (*ListResult, er
 	// Data query.
 	args = append(args, f.PageSize, offset)
 	dataSQL := fmt.Sprintf(`
-		SELECT r.id, r.title, r.original_filename, r.file_ext, r.file_size_bytes, r.mime_type,
+		SELECT r.id, r.title, r.file_ext, r.file_size_bytes, r.mime_type,
 			r.storage_path, r.uploaded_by, r.recorded_at, r.recorded_at_source,
 			r.duration_seconds, r.bitrate, r.sample_rate, r.channels,
 			r.playback_ready, r.waveform_ready, r.processing_error, r.processing_step,
@@ -253,7 +251,7 @@ func (repo *Repository) List(ctx context.Context, f ListFilter) (*ListResult, er
 	for rows.Next() {
 		var rec Recording
 		if err := rows.Scan(
-			&rec.ID, &rec.Title, &rec.OriginalFilename, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
+			&rec.ID, &rec.Title, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
 			&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
 			&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
 			&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
@@ -288,13 +286,13 @@ func (repo *Repository) Update(ctx context.Context, id string, title *string, re
 			recorded_at_source = CASE WHEN $3 IS NOT NULL THEN 'user_set' ELSE recorded_at_source END,
 			updated_at = now()
 		WHERE id=$1 AND deleted_at IS NULL
-		RETURNING id, title, original_filename, file_ext, file_size_bytes, mime_type,
+		RETURNING id, title, file_ext, file_size_bytes, mime_type,
 			storage_path, uploaded_by, recorded_at, recorded_at_source,
 			duration_seconds, bitrate, sample_rate, channels,
 			playback_ready, waveform_ready, processing_error, processing_step,
 			created_at, updated_at, deleted_at
 	`, id, title, recordedAt).Scan(
-		&rec.ID, &rec.Title, &rec.OriginalFilename, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
+		&rec.ID, &rec.Title, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
 		&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
 		&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
 		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
@@ -304,4 +302,13 @@ func (repo *Repository) Update(ctx context.Context, id string, title *string, re
 		return nil, fmt.Errorf("recordings: failed to update: %w", err)
 	}
 	return &rec, nil
+}
+
+func (repo *Repository) CountAll(ctx context.Context) (int, error) {
+	var count int
+	err := repo.db.QueryRow(ctx, "SELECT COUNT(*) FROM recordings").Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("recordings: failed to count: %w", err)
+	}
+	return count, nil
 }

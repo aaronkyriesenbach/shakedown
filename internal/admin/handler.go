@@ -96,7 +96,7 @@ func (h *Handler) dataDump(w http.ResponseWriter, r *http.Request) {
 	defer zw.Close()
 
 	rows, err := h.db.Query(r.Context(), `
-		SELECT id, title, original_filename, file_ext, recorded_at, duration_seconds, created_at
+		SELECT id, title, file_ext, recorded_at, duration_seconds, created_at
 		FROM recordings WHERE deleted_at IS NULL ORDER BY recorded_at DESC
 	`)
 	if err != nil {
@@ -106,19 +106,18 @@ func (h *Handler) dataDump(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type recMeta struct {
-		ID               string    `json:"id"`
-		Title            string    `json:"title"`
-		OriginalFilename string    `json:"original_filename"`
-		FileExt          string    `json:"file_ext"`
-		RecordedAt       time.Time `json:"recorded_at"`
-		DurationSeconds  *float64  `json:"duration_seconds,omitempty"`
-		CreatedAt        time.Time `json:"created_at"`
+		ID              string    `json:"id"`
+		Title           string    `json:"title"`
+		FileExt         string    `json:"file_ext"`
+		RecordedAt      time.Time `json:"recorded_at"`
+		DurationSeconds *float64  `json:"duration_seconds,omitempty"`
+		CreatedAt       time.Time `json:"created_at"`
 	}
 
 	var allRecs []recMeta
 	for rows.Next() {
 		var rec recMeta
-		if err := rows.Scan(&rec.ID, &rec.Title, &rec.OriginalFilename, &rec.FileExt, &rec.RecordedAt, &rec.DurationSeconds, &rec.CreatedAt); err != nil {
+		if err := rows.Scan(&rec.ID, &rec.Title, &rec.FileExt, &rec.RecordedAt, &rec.DurationSeconds, &rec.CreatedAt); err != nil {
 			continue
 		}
 		allRecs = append(allRecs, rec)

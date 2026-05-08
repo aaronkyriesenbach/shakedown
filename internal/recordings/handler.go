@@ -70,7 +70,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, header, err := r.FormFile("file")
+	file, _, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, `{"error":"missing file field"}`, http.StatusBadRequest)
 		return
@@ -101,17 +101,20 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	tmpFile.Close()
 
-	sanitized := SanitizeFilename(header.Filename)
+	now := time.Now().UTC()
 	title := r.FormValue("title")
 	if title == "" {
-		title = sanitized
+		count, err := h.svc.repo.CountAll(r.Context())
+		if err != nil {
+			h.logger.Error("failed to count recordings", zap.Error(err))
+			count = 0
+		}
+		title = fmt.Sprintf("Recording #%d %s", count+1, now.Format("2006-01-02"))
 	}
 
-	now := time.Now().UTC()
 	rec, err := h.svc.repo.Create(r.Context(), CreateRecordingInput{
-		Title:            title,
-		OriginalFilename: sanitized,
-		FileExt:          ext,
+		Title:   title,
+		FileExt: ext,
 		FileSizeBytes:    written,
 		MimeType:         mimeType,
 		StoragePath:      "",
@@ -308,9 +311,9 @@ func (h *Handler) downloadRecording(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, rec.OriginalFilename))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s%s"`, rec.Title, rec.FileExt))
 	w.Header().Set("Content-Type", rec.MimeType)
-	http.ServeContent(w, r, rec.OriginalFilename, fi.ModTime(), f)
+	http.ServeContent(w, r, rec.Title+rec.FileExt, fi.ModTime(), f)
 }
 
 func (h *Handler) waveformData(w http.ResponseWriter, r *http.Request) {

@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"path/filepath"
-	"regexp"
-	"strings"
 )
 
 // audioMagicBytes maps MIME types to their magic byte signatures.
@@ -45,19 +42,4 @@ func ValidateAudioMagicBytes(r io.Reader) (string, string, io.Reader, error) {
 	}
 
 	return "", "", nil, fmt.Errorf("validation: unsupported audio format (not MP3, FLAC, WAV, OGG, or M4A)")
-}
-
-var unsafeChars = regexp.MustCompile(`[^\w\-. ]`)
-
-// SanitizeFilename removes unsafe characters from a filename.
-// Keeps alphanumeric, dash, dot, underscore, and space.
-func SanitizeFilename(name string) string {
-	name = filepath.Base(name)
-	name = unsafeChars.ReplaceAllString(name, "_")
-	// Trim whitespace and dots
-	name = strings.Trim(name, ". ")
-	if name == "" {
-		return "upload"
-	}
-	return name
 }
