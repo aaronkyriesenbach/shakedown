@@ -37,7 +37,9 @@ func RequireAuth(db *pgxpool.Pool) func(http.Handler) http.Handler {
 
 // DevAuth injects a synthetic local dev user into every request, bypassing
 // session validation. Only used when DISABLE_AUTH=true.
-func DevAuth() func(http.Handler) http.Handler {
+// It upserts the dev user into the database so that foreign key constraints
+// (e.g. recordings.uploaded_by) are satisfied.
+func DevAuth(db *pgxpool.Pool) func(http.Handler) http.Handler {
 	devUser := &User{
 		ID:          "00000000-0000-0000-0000-000000000000",
 		OIDCSub:     "dev",
@@ -47,6 +49,19 @@ func DevAuth() func(http.Handler) http.Handler {
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
+
+	if db != nil {
+		_, err := db.Exec(context.Background(),
+			`INSERT INTO users (id, oidc_sub, email, display_name, role)
+			 VALUES ($1, $2, $3, $4, $5)
+			 ON CONFLICT (id) DO NOTHING`,
+			devUser.ID, devUser.OIDCSub, devUser.Email, devUser.DisplayName, devUser.Role,
+		)
+		if err != nil {
+			_ = err
+		}
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := context.WithValue(r.Context(), userContextKey, devUser)

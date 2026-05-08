@@ -75,27 +75,13 @@ export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>
       };
     }, [togglePlay, seekToTime, currentTime]);
 
-    if (!recording.playback_ready) {
+    if (recording.processing_step !== 'complete') {
       return (
         <div className={cn('p-4 rounded-lg bg-card border shadow-sm', className)}>
           <ProcessingStatus
-            playbackReady={recording.playback_ready}
-            waveformReady={recording.waveform_ready}
+            processingStep={recording.processing_step}
             processingError={recording.processing_error}
           />
-        </div>
-      );
-    }
-
-    if (recording.playback_ready && !recording.waveform_ready) {
-      return (
-        <div className={cn('p-4 rounded-lg bg-card border shadow-sm space-y-4', className)}>
-          <ProcessingStatus
-            playbackReady={recording.playback_ready}
-            waveformReady={recording.waveform_ready}
-            processingError={recording.processing_error}
-          />
-          <audio controls src={audioUrl} className="w-full" />
         </div>
       );
     }

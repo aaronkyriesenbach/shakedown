@@ -49,15 +49,13 @@ export function RecordingCard({ recording, className }: RecordingCardProps) {
                 <AlertCircle className="w-3 h-3" />
                 Error
               </Badge>
-            ) : !recording.playback_ready ? (
+            ) : recording.processing_step !== 'complete' ? (
               <Badge variant="secondary" className="bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-amber-500/20 flex items-center gap-1">
                 <RefreshCw className="w-3 h-3 animate-spin" />
-                Processing
-              </Badge>
-            ) : !recording.waveform_ready ? (
-              <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border-blue-500/20 flex items-center gap-1">
-                <RefreshCw className="w-3 h-3 animate-spin" />
-                Generating waveform
+                {recording.processing_step === 'queued' && 'Queued'}
+                {recording.processing_step === 'analyzing' && 'Analyzing'}
+                {recording.processing_step === 'transcoding' && 'Transcoding'}
+                {recording.processing_step === 'generating_waveform' && 'Generating waveform'}
               </Badge>
             ) : null}
           </div>
