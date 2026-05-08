@@ -4,7 +4,6 @@ import { apiFetch } from '@/api/client';
 export interface Recording {
   id: string;
   title: string;
-  original_filename: string;
   file_ext: string;
   file_size_bytes: number;
   mime_type: string;
@@ -27,7 +26,6 @@ export interface Recording {
 
 export interface CreateRecordingInput {
   title: string;
-  original_filename: string;
   file_ext: string;
   file_size_bytes: number;
   mime_type: string;

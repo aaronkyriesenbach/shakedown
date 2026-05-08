@@ -79,7 +79,7 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
               <ChevronLeft className="w-5 h-5" />
             </Link>
           </Button>
-          <h1 className="text-2xl font-bold">{recording.title || recording.original_filename}</h1>
+          <h1 className="text-2xl font-bold">{recording.title}</h1>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setIsEditDialogOpen(true)}>
@@ -106,10 +106,6 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
           <Card className="p-6">
             <h3 className="font-semibold mb-4 text-lg">Metadata</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 text-sm">
-              <div>
-                <span className="text-muted-foreground block mb-1">Original Filename</span>
-                <span className="font-medium break-all">{recording.original_filename}</span>
-              </div>
               <div>
                 <span className="text-muted-foreground block mb-1">File Size</span>
                 <span className="font-medium">{formatFileSize(recording.file_size_bytes)}</span>

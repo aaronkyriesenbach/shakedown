@@ -25,7 +25,7 @@ export function RecordingCard({ recording, className }: RecordingCardProps) {
             </div>
             <div>
               <h3 className="font-semibold text-lg leading-tight line-clamp-1 group-hover:text-indigo-400 transition-colors">
-                {recording.title || recording.original_filename}
+                {recording.title}
               </h3>
               <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
                 <span className="flex items-center gap-1">
