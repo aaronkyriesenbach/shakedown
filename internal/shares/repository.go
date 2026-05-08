@@ -17,8 +17,8 @@ type Share struct {
 	Token        string     `json:"token"`
 	RecordingID  string     `json:"recording_id"`
 	SongID       *string    `json:"song_id,omitempty"`
-	StartSeconds *float64   `json:"start_seconds,omitempty"`
-	EndSeconds   *float64   `json:"end_seconds,omitempty"`
+	StartSeconds *int      `json:"start_seconds,omitempty"`
+	EndSeconds   *int      `json:"end_seconds,omitempty"`
 	Label        *string    `json:"label,omitempty"`
 	CreatedBy    string     `json:"created_by"`
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
@@ -32,7 +32,7 @@ type Repository struct {
 
 func NewRepository(db *pgxpool.Pool) *Repository { return &Repository{db: db} }
 
-func (r *Repository) Create(ctx context.Context, recordingID, userID string, songID *string, startSeconds, endSeconds *float64, label *string, expiresAt *time.Time) (*Share, error) {
+func (r *Repository) Create(ctx context.Context, recordingID, userID string, songID *string, startSeconds, endSeconds *int, label *string, expiresAt *time.Time) (*Share, error) {
 	id := uuid.New().String()
 	tokenBytes := make([]byte, 32)
 	if _, err := cryptoRand.Read(tokenBytes); err != nil {

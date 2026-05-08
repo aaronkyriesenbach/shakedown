@@ -17,7 +17,7 @@ export function SongMarkerForm({ recordingId, song, currentTime, onClose }: Song
   
   const [title, setTitle] = useState(song?.title ?? '');
   const [startSeconds, setStartSeconds] = useState(
-    song?.start_seconds?.toString() ?? (currentTime !== undefined ? currentTime.toFixed(1) : '0.0')
+    song?.start_seconds?.toString() ?? (currentTime !== undefined ? currentTime.toFixed(0) : '0')
   );
   const [endSeconds, setEndSeconds] = useState(song?.end_seconds?.toString() ?? '');
   const [notes, setNotes] = useState(song?.notes ?? '');
@@ -33,7 +33,7 @@ export function SongMarkerForm({ recordingId, song, currentTime, onClose }: Song
       return;
     }
     
-    const start = parseFloat(startSeconds);
+    const start = parseInt(startSeconds, 10);
     if (isNaN(start) || start < 0) {
       toast.error('Valid start time is required');
       return;
@@ -41,7 +41,7 @@ export function SongMarkerForm({ recordingId, song, currentTime, onClose }: Song
     
     let end: number | undefined = undefined;
     if (endSeconds.trim()) {
-      end = parseFloat(endSeconds);
+      end = parseInt(endSeconds, 10);
       if (isNaN(end) || end <= start) {
         toast.error('End time must be a number greater than start time');
         return;
@@ -109,7 +109,7 @@ export function SongMarkerForm({ recordingId, song, currentTime, onClose }: Song
             {currentTime !== undefined && (
               <button
                 type="button"
-                onClick={() => setStartSeconds(currentTime.toFixed(1))}
+                onClick={() => setStartSeconds(currentTime.toFixed(0))}
                 className="text-xs text-primary hover:underline"
               >
                 Use current
@@ -119,7 +119,7 @@ export function SongMarkerForm({ recordingId, song, currentTime, onClose }: Song
           <Input 
             id="start" 
             type="number" 
-            step="0.1"
+            step="1"
             min="0"
             value={startSeconds} 
             onChange={(e) => setStartSeconds(e.target.value)} 
@@ -131,7 +131,7 @@ export function SongMarkerForm({ recordingId, song, currentTime, onClose }: Song
           <Input 
             id="end" 
             type="number" 
-            step="0.1"
+            step="1"
             min="0"
             value={endSeconds} 
             onChange={(e) => setEndSeconds(e.target.value)} 

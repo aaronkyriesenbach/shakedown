@@ -53,11 +53,11 @@ export function ShareDialog({ recording, open, onOpenChange }: ShareDialogProps)
 
     if (label.trim()) input.label = label.trim();
     if (startSeconds) {
-      const s = parseFloat(startSeconds);
+      const s = parseInt(startSeconds, 10);
       if (!isNaN(s)) input.start_seconds = s;
     }
     if (endSeconds) {
-      const e = parseFloat(endSeconds);
+      const e = parseInt(endSeconds, 10);
       if (!isNaN(e)) input.end_seconds = e;
     }
     if (expiresAt) {
@@ -131,6 +131,7 @@ export function ShareDialog({ recording, open, onOpenChange }: ShareDialogProps)
                   <Input
                     id="start-time"
                     type="number"
+                    step="1"
                     min="0"
                     placeholder="Full recording"
                     value={startSeconds}
@@ -142,6 +143,7 @@ export function ShareDialog({ recording, open, onOpenChange }: ShareDialogProps)
                   <Input
                     id="end-time"
                     type="number"
+                    step="1"
                     min="0"
                     placeholder="Full recording"
                     value={endSeconds}

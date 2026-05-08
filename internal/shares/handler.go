@@ -26,8 +26,8 @@ func NewHandler(repo *Repository, recRepo *recordings.Repository, storage record
 type createShareRequest struct {
 	RecordingID  string     `json:"recording_id"`
 	SongID       *string    `json:"song_id"`
-	StartSeconds *float64   `json:"start_seconds"`
-	EndSeconds   *float64   `json:"end_seconds"`
+	StartSeconds *int      `json:"start_seconds"`
+	EndSeconds   *int      `json:"end_seconds"`
 	Label        *string    `json:"label"`
 	ExpiresAt    *time.Time `json:"expires_at"`
 }

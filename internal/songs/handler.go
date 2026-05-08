@@ -29,16 +29,16 @@ func (h *Handler) Routes(r chi.Router) {
 }
 
 type createSongRequest struct {
-	Title        string   `json:"title"`
-	StartSeconds float64  `json:"start_seconds"`
-	EndSeconds   *float64 `json:"end_seconds"`
+	Title        string `json:"title"`
+	StartSeconds int    `json:"start_seconds"`
+	EndSeconds   *int   `json:"end_seconds"`
 	Notes        *string  `json:"notes"`
 }
 
 type updateSongRequest struct {
-	Title        string   `json:"title"`
-	StartSeconds float64  `json:"start_seconds"`
-	EndSeconds   *float64 `json:"end_seconds"`
+	Title        string `json:"title"`
+	StartSeconds int    `json:"start_seconds"`
+	EndSeconds   *int   `json:"end_seconds"`
 	Notes        *string  `json:"notes"`
 }
 
