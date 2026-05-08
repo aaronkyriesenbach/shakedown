@@ -187,14 +187,23 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="seg-start" className="text-xs">Start (sec)</Label>
-                  <Input 
-                    id="seg-start" 
-                    type="number" 
-                    min="0" 
-                    value={segmentStart} 
-                    onChange={(e) => setSegmentStart(e.target.value)} 
-                    className="h-8 text-sm"
-                  />
+                  <div className="relative">
+                    <Input 
+                      id="seg-start" 
+                      type="number" 
+                      min="0" 
+                      value={segmentStart} 
+                      onChange={(e) => setSegmentStart(e.target.value)} 
+                      className="h-8 text-sm pr-20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSegmentStart(Math.floor(currentTime).toString())}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-primary hover:underline"
+                    >
+                      Use current
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="seg-duration" className="text-xs">Duration (sec)</Label>
