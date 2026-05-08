@@ -15,8 +15,8 @@ type Song struct {
 	ID           string    `json:"id"`
 	RecordingID  string    `json:"recording_id"`
 	Title        string    `json:"title"`
-	StartSeconds float64   `json:"start_seconds"`
-	EndSeconds   *float64  `json:"end_seconds,omitempty"`
+	StartSeconds int   `json:"start_seconds"`
+	EndSeconds   *int  `json:"end_seconds,omitempty"`
 	Notes        *string   `json:"notes,omitempty"`
 	CreatedBy    string    `json:"created_by"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -33,7 +33,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 }
 
 // Create inserts a new song marker.
-func (r *Repository) Create(ctx context.Context, recordingID, userID, title string, startSeconds float64, endSeconds *float64, notes *string) (*Song, error) {
+func (r *Repository) Create(ctx context.Context, recordingID, userID, title string, startSeconds int, endSeconds *int, notes *string) (*Song, error) {
 	id := uuid.New().String()
 	var song Song
 	err := r.db.QueryRow(ctx, `
@@ -93,7 +93,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Song, error) {
 }
 
 // Update modifies a song's fields.
-func (r *Repository) Update(ctx context.Context, id, title string, startSeconds float64, endSeconds *float64, notes *string) (*Song, error) {
+func (r *Repository) Update(ctx context.Context, id, title string, startSeconds int, endSeconds *int, notes *string) (*Song, error) {
 	var s Song
 	err := r.db.QueryRow(ctx, `
 		UPDATE songs SET title=$2, start_seconds=$3, end_seconds=$4, notes=$5, updated_at=now()
