@@ -88,6 +88,7 @@ export function useAudioPlayer({
       peaks: peaks,
       duration: initialDuration,
       backend: 'WebAudio',
+      dragToSeek: true,
     });
 
     wavesurferRef.current = ws;

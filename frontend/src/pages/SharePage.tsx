@@ -1,15 +1,17 @@
 import { useParams, Link } from 'react-router-dom';
 import { Download, Loader2, Calendar, Clock, Music } from 'lucide-react';
-import { useShare, shareStreamUrl, shareDownloadUrl } from '@/api/shares';
+import { useShare, shareStreamUrl, shareWaveformUrl, shareDownloadUrl } from '@/api/shares';
 import { WaveformPlayer } from '@/components/audio/WaveformPlayer';
 import { formatDuration, formatDate } from '@/lib/format';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useTheme } from '@/hooks/useTheme';
 
 export default function SharePage() {
   const { token } = useParams<{ token: string }>();
   const { data: share, isLoading, error } = useShare(token ?? '');
+  useTheme();
 
   if (isLoading) {
     return (
@@ -84,8 +86,11 @@ export default function SharePage() {
         <Card className="p-6">
           {recording ? (
             <WaveformPlayer 
-              recording={recording}
+              recording={hasSnippet
+                ? { ...recording, duration_seconds: (share.end_seconds ?? 0) - (share.start_seconds ?? 0) }
+                : recording}
               audioUrlOverride={shareStreamUrl(share.token)}
+              peaksUrlOverride={shareWaveformUrl(share.token)}
             />
           ) : (
             <div className="h-24 flex items-center justify-center bg-muted/30 rounded-md">
