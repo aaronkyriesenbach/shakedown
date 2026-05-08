@@ -138,5 +138,6 @@ export function waveformUrl(id: string): string {
 }
 
 export function segmentUrl(id: string, start: number, duration: number): string {
-  return `/api/recordings/${id}/segment?start=${start}&duration=${duration}`;
+  const end = start + duration;
+  return `/api/recordings/${id}/segment?start=${start}&end=${end}`;
 }

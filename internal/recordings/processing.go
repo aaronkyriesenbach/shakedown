@@ -175,7 +175,6 @@ func (svc *Service) processRecording(ctx context.Context, job ProcessingJob) {
 }
 
 // parseDateFromTags tries to extract recorded_at from ffprobe tags.
-// Returns zero time if no date tags found.
 func parseDateFromTags(tags map[string]string) time.Time {
 	for _, key := range []string{"date", "creation_time", "com.apple.quicktime.creationdate"} {
 		if val, ok := tags[key]; ok {
@@ -191,4 +190,34 @@ func parseDateFromTags(tags map[string]string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// ExtractSegment extracts a section of an audio file and generates a waveform for it.
+// inputPath is the source playback file. outputDir will contain snippet.m4a and waveform.json.
+func ExtractSegment(ctx context.Context, inputPath, outputDir string, startSec, endSec float64) error {
+	if err := os.MkdirAll(outputDir, 0o750); err != nil {
+		return fmt.Errorf("extract segment: mkdir: %w", err)
+	}
+
+	snippetPath := filepath.Join(outputDir, "snippet.m4a")
+	duration := endSec - startSec
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-y",
+		"-ss", strconv.FormatFloat(startSec, 'f', 3, 64),
+		"-i", inputPath,
+		"-t", strconv.FormatFloat(duration, 'f', 3, 64),
+		"-c:a", "aac", "-b:a", "192k",
+		"-movflags", "+faststart",
+		snippetPath,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("extract segment: ffmpeg: %w (output: %s)", err, strings.TrimSpace(string(out)))
+	}
+
+	waveformPath := filepath.Join(outputDir, "waveform.json")
+	if err := runAudiowaveform(ctx, snippetPath, waveformPath); err != nil {
+		return fmt.Errorf("extract segment: waveform: %w", err)
+	}
+
+	return nil
 }

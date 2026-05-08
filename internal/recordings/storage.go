@@ -21,6 +21,8 @@ type Storage interface {
 	Exists(ctx context.Context, path string) (bool, error)
 	// MkdirAll creates the directory at path and all parents.
 	MkdirAll(ctx context.Context, path string) error
+	// FullPath returns the absolute filesystem path for a relative storage path.
+	FullPath(path string) (string, error)
 }
 
 // LocalStorage implements Storage using the local filesystem.
@@ -124,4 +126,8 @@ func (s *LocalStorage) MkdirAll(_ context.Context, path string) error {
 		return fmt.Errorf("storage: failed to create directory: %w", err)
 	}
 	return nil
+}
+
+func (s *LocalStorage) FullPath(path string) (string, error) {
+	return s.SafeJoin(path)
 }

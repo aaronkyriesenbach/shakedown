@@ -7,6 +7,19 @@
     <title>frontend</title>
   </head>
   <body>
+    <script>
+      // Synchronous theme application to prevent FOUC
+      (function() {
+        var t = localStorage.getItem('shakedown-theme') || 'system';
+        var r = t === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : t;
+        var d = document.documentElement;
+        d.classList.add(r);
+        d.style.colorScheme = r;
+        d.style.backgroundColor = r === 'dark' ? 'hsl(240 10% 4%)' : 'hsl(0 0% 97%)';
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

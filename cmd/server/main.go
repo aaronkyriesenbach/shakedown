@@ -143,6 +143,7 @@ func main() {
 				r.Use(shares.TokenMiddleware(db))
 				r.Get("/", shareHandler.GetShare)
 				r.Get("/stream", shareHandler.StreamShare)
+				r.Get("/waveform", shareHandler.WaveformShare)
 				r.Get("/download", shareHandler.DownloadShare)
 			}
 		})
