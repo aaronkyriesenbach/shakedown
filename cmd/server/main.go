@@ -58,7 +58,7 @@ func main() {
 	var requireAuth func(http.Handler) http.Handler
 	if cfg.DisableAuth {
 		logger.Warn("authentication disabled via DISABLE_AUTH — all requests use a synthetic dev user")
-		requireAuth = auth.DevAuth()
+		requireAuth = auth.DevAuth(db)
 	} else {
 		requireAuth = auth.RequireAuth(db)
 		authProvider, err := auth.NewProvider(ctx, cfg)

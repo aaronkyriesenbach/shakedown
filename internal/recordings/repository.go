@@ -30,6 +30,7 @@ type Recording struct {
 	PlaybackReady    bool       `json:"playback_ready"`
 	WaveformReady    bool       `json:"waveform_ready"`
 	ProcessingError  *string    `json:"processing_error,omitempty"`
+	ProcessingStep   string     `json:"processing_step"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 	DeletedAt        *time.Time `json:"deleted_at,omitempty"`
@@ -69,7 +70,7 @@ func (repo *Repository) Create(ctx context.Context, input CreateRecordingInput) 
 		RETURNING id, title, original_filename, file_ext, file_size_bytes, mime_type,
 			storage_path, uploaded_by, recorded_at, recorded_at_source,
 			duration_seconds, bitrate, sample_rate, channels,
-			playback_ready, waveform_ready, processing_error,
+			playback_ready, waveform_ready, processing_error, processing_step,
 			created_at, updated_at, deleted_at
 	`, id, input.Title, input.OriginalFilename, input.FileExt, input.FileSizeBytes, input.MimeType,
 		input.StoragePath, input.UploadedBy, input.RecordedAt, input.RecordedAtSource,
@@ -77,7 +78,7 @@ func (repo *Repository) Create(ctx context.Context, input CreateRecordingInput) 
 		&rec.ID, &rec.Title, &rec.OriginalFilename, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
 		&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
 		&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
-		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError,
+		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
 		&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
 	)
 	if err != nil {
@@ -93,7 +94,7 @@ func (repo *Repository) GetByID(ctx context.Context, id string) (*Recording, err
 		SELECT id, title, original_filename, file_ext, file_size_bytes, mime_type,
 			storage_path, uploaded_by, recorded_at, recorded_at_source,
 			duration_seconds, bitrate, sample_rate, channels,
-			playback_ready, waveform_ready, processing_error,
+			playback_ready, waveform_ready, processing_error, processing_step,
 			created_at, updated_at, deleted_at
 		FROM recordings
 		WHERE id = $1 AND deleted_at IS NULL
@@ -101,7 +102,7 @@ func (repo *Repository) GetByID(ctx context.Context, id string) (*Recording, err
 		&rec.ID, &rec.Title, &rec.OriginalFilename, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
 		&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
 		&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
-		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError,
+		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
 		&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -133,15 +134,30 @@ func (repo *Repository) UpdateProcessingResult(
 	playbackReady, waveformReady bool,
 	processingError *string,
 ) error {
+	step := "complete"
+	if processingError != nil {
+		step = "complete"
+	}
 	_, err := repo.db.Exec(ctx, `
 		UPDATE recordings SET
 			duration_seconds = $2, bitrate = $3, sample_rate = $4, channels = $5,
 			playback_ready = $6, waveform_ready = $7, processing_error = $8,
+			processing_step = $9,
 			updated_at = now()
 		WHERE id = $1
-	`, id, durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, processingError)
+	`, id, durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, processingError, step)
 	if err != nil {
 		return fmt.Errorf("recordings: failed to update processing result: %w", err)
+	}
+	return nil
+}
+
+func (repo *Repository) UpdateProcessingStep(ctx context.Context, id string, step string) error {
+	_, err := repo.db.Exec(ctx, `
+		UPDATE recordings SET processing_step = $2, updated_at = now() WHERE id = $1
+	`, id, step)
+	if err != nil {
+		return fmt.Errorf("recordings: failed to update processing step: %w", err)
 	}
 	return nil
 }
@@ -220,7 +236,7 @@ func (repo *Repository) List(ctx context.Context, f ListFilter) (*ListResult, er
 		SELECT r.id, r.title, r.original_filename, r.file_ext, r.file_size_bytes, r.mime_type,
 			r.storage_path, r.uploaded_by, r.recorded_at, r.recorded_at_source,
 			r.duration_seconds, r.bitrate, r.sample_rate, r.channels,
-			r.playback_ready, r.waveform_ready, r.processing_error,
+			r.playback_ready, r.waveform_ready, r.processing_error, r.processing_step,
 			r.created_at, r.updated_at, r.deleted_at
 		FROM recordings r
 		%s %s
@@ -240,7 +256,7 @@ func (repo *Repository) List(ctx context.Context, f ListFilter) (*ListResult, er
 			&rec.ID, &rec.Title, &rec.OriginalFilename, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
 			&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
 			&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
-			&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError,
+			&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
 			&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
 		); err != nil {
 			return nil, fmt.Errorf("recordings: scan error: %w", err)
@@ -275,13 +291,13 @@ func (repo *Repository) Update(ctx context.Context, id string, title *string, re
 		RETURNING id, title, original_filename, file_ext, file_size_bytes, mime_type,
 			storage_path, uploaded_by, recorded_at, recorded_at_source,
 			duration_seconds, bitrate, sample_rate, channels,
-			playback_ready, waveform_ready, processing_error,
+			playback_ready, waveform_ready, processing_error, processing_step,
 			created_at, updated_at, deleted_at
 	`, id, title, recordedAt).Scan(
 		&rec.ID, &rec.Title, &rec.OriginalFilename, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
 		&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
 		&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
-		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError,
+		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
 		&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
 	)
 	if err != nil {

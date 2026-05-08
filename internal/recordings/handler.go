@@ -83,7 +83,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpFile, err := os.CreateTemp("", "shakedown-upload-*"+ext)
+	tmpFile, err := os.CreateTemp(h.svc.storage.root, "shakedown-upload-*"+ext)
 	if err != nil {
 		h.logger.Error("failed to create temp file", zap.Error(err))
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)

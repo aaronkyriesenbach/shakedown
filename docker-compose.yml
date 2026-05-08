@@ -36,17 +36,6 @@ services:
         max-file: "3"
     environment:
       - PORT=8080
-      - DATABASE_URL
-      - STORAGE_ROOT
-      - DISABLE_AUTH
-      - OIDC_ISSUER
-      - OIDC_CLIENT_ID
-      - OIDC_CLIENT_SECRET
-      - APP_BASE_URL
-      - SESSION_SECRET
-      - PROCESSING_MAX_WORKERS
-      - PROCESSING_TIMEOUT_SECONDS
-      - UPLOAD_MAX_SIZE_MB
 
 volumes:
   pgdata:

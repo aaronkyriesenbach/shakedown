@@ -19,6 +19,7 @@ export interface Recording {
   playback_ready: boolean;
   waveform_ready: boolean;
   processing_error?: string;
+  processing_step: 'queued' | 'analyzing' | 'transcoding' | 'generating_waveform' | 'complete';
   created_at: string;
   updated_at: string;
   deleted_at?: string;
@@ -89,6 +90,11 @@ export function useRecording(id: string) {
     queryKey: recordingKeys.detail(id),
     queryFn: () => apiFetch<Recording>(`/api/recordings/${id}`),
     enabled: !!id,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (data && data.processing_step !== 'complete') return 2000;
+      return false;
+    },
   });
 }
 

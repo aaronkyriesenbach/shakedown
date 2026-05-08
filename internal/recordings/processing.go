@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -64,9 +65,25 @@ func runFFmpeg(ctx context.Context, inputPath, outputPath string) error {
 }
 
 // runAudiowaveform generates waveform peaks JSON using BBC audiowaveform.
+// It first converts the input to WAV via ffmpeg since audiowaveform only
+// supports WAV, MP3, FLAC, and Ogg natively.
 func runAudiowaveform(ctx context.Context, inputPath, outputPath string) error {
+	wavPath := outputPath + ".tmp.wav"
+	defer os.Remove(wavPath)
+
+	ffCmd := exec.CommandContext(ctx, "ffmpeg",
+		"-i", inputPath,
+		"-ac", "1",
+		"-ar", "16000",
+		"-y",
+		wavPath,
+	)
+	if out, err := ffCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("audiowaveform: wav conversion failed: %w (output: %s)", err, strings.TrimSpace(string(out)))
+	}
+
 	cmd := exec.CommandContext(ctx, "audiowaveform",
-		"--input-filename", inputPath,
+		"--input-filename", wavPath,
 		"--output-filename", outputPath,
 		"--output-format", "json",
 		"--pixels-per-second", "10",
@@ -105,7 +122,8 @@ func (svc *Service) processRecording(ctx context.Context, job ProcessingJob) {
 		procErr         *string
 	)
 
-	// Step 1: ffprobe
+	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "analyzing")
+
 	probeResult, err := runFFprobe(ctx, originalPath)
 	if err != nil {
 		errStr := err.Error()
@@ -131,7 +149,8 @@ func (svc *Service) processRecording(ctx context.Context, job ProcessingJob) {
 		}
 	}
 
-	// Step 2: ffmpeg transcode
+	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "transcoding")
+
 	if err := runFFmpeg(ctx, originalPath, playbackPath); err != nil {
 		errStr := err.Error()
 		procErr = &errStr
@@ -141,9 +160,9 @@ func (svc *Service) processRecording(ctx context.Context, job ProcessingJob) {
 	}
 	playbackReady = true
 
-	// Step 3: audiowaveform
+	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "generating_waveform")
+
 	if err := runAudiowaveform(ctx, originalPath, waveformPath); err != nil {
-		// Non-fatal: log but don't fail the whole pipeline
 		errStr := fmt.Sprintf("waveform generation failed: %v", err)
 		procErr = &errStr
 	} else {
