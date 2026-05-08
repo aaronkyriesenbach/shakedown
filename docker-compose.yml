@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: shakedown
+      POSTGRES_USER: shakedown
+      POSTGRES_PASSWORD: shakedown
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shakedown"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    user: "1000:1000"
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+      - audiodata:/data/audio
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      - PORT=8080
+      - DATABASE_URL
+      - STORAGE_ROOT
+      - DISABLE_AUTH
+      - OIDC_ISSUER
+      - OIDC_CLIENT_ID
+      - OIDC_CLIENT_SECRET
+      - APP_BASE_URL
+      - SESSION_SECRET
+      - PROCESSING_MAX_WORKERS
+      - PROCESSING_TIMEOUT_SECONDS
+      - UPLOAD_MAX_SIZE_MB
+
+volumes:
+  pgdata:
+  audiodata:
