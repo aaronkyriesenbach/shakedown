@@ -24,6 +24,11 @@ type Handler struct {
 	logger      *zap.Logger
 }
 
+type recLookup struct {
+	datePath string
+	title    string
+}
+
 func NewHandler(db *pgxpool.Pool, storageRoot string, logger *zap.Logger) *Handler {
 	return &Handler{db: db, storageRoot: storageRoot, logger: logger}
 }
@@ -122,55 +127,85 @@ func (h *Handler) dataDump(w http.ResponseWriter, r *http.Request) {
 		}
 		allRecs = append(allRecs, rec)
 
+		datePath := fmt.Sprintf("%d/%02d/%02d", rec.RecordedAt.Year(), rec.RecordedAt.Month(), rec.RecordedAt.Day())
+
 		audioPath := filepath.Join(h.storageRoot, rec.ID, "original"+rec.FileExt)
 		if f, err := os.Open(audioPath); err == nil {
 			defer f.Close()
-			entry, err := zw.Create(fmt.Sprintf("%s/%s_original%s", rec.ID, rec.Title, rec.FileExt))
+			entry, err := zw.Create(fmt.Sprintf("%s/%s%s", datePath, rec.Title, rec.FileExt))
 			if err == nil {
 				_, _ = io.Copy(entry, f)
 			}
 		}
+
+		metaEntry, err := zw.Create(fmt.Sprintf("%s/%s_metadata.json", datePath, rec.Title))
+		if err == nil {
+			_ = json.NewEncoder(metaEntry).Encode(rec)
+		}
 	}
 
-	metaEntry, err := zw.Create("metadata.json")
+	exportEntry, err := zw.Create("metadata.json")
 	if err == nil {
-		_ = json.NewEncoder(metaEntry).Encode(map[string]interface{}{
+		_ = json.NewEncoder(exportEntry).Encode(map[string]interface{}{
 			"exported_at": time.Now(),
-			"recordings":  allRecs,
 		})
 	}
 
-	_ = h.dumpTableToZip(r.Context(), zw, "songs", `SELECT id, recording_id, title, start_seconds, end_seconds, notes, created_at FROM songs ORDER BY recording_id, start_seconds`)
-	_ = h.dumpTableToZip(r.Context(), zw, "comments", `SELECT id, recording_id, parent_id, timestamp_seconds, content, author_id, created_at FROM comments WHERE deleted_at IS NULL ORDER BY recording_id, created_at`)
+	recMap := make(map[string]recLookup, len(allRecs))
+	for _, rec := range allRecs {
+		datePath := fmt.Sprintf("%d/%02d/%02d", rec.RecordedAt.Year(), rec.RecordedAt.Month(), rec.RecordedAt.Day())
+		recMap[rec.ID] = recLookup{datePath: datePath, title: rec.Title}
+	}
+
+	_ = h.dumpGroupedToZip(r.Context(), zw, recMap, "songs",
+		`SELECT s.id, s.recording_id, s.title, s.start_seconds, s.end_seconds, s.notes, s.created_at
+		 FROM songs s JOIN recordings r ON s.recording_id = r.id
+		 WHERE r.deleted_at IS NULL ORDER BY s.recording_id, s.start_seconds`)
+	_ = h.dumpGroupedToZip(r.Context(), zw, recMap, "comments",
+		`SELECT c.id, c.recording_id, c.parent_id, c.timestamp_seconds, c.content, c.author_id, c.created_at
+		 FROM comments c JOIN recordings r ON c.recording_id = r.id
+		 WHERE c.deleted_at IS NULL AND r.deleted_at IS NULL ORDER BY c.recording_id, c.created_at`)
 }
 
-func (h *Handler) dumpTableToZip(ctx context.Context, zw *zip.Writer, name, query string) error {
+func (h *Handler) dumpGroupedToZip(ctx context.Context, zw *zip.Writer, recMap map[string]recLookup, label, query string) error {
 	rows, err := h.db.Query(ctx, query)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
-	entry, err := zw.Create(name + ".json")
-	if err != nil {
-		return err
-	}
-
 	descriptions := rows.FieldDescriptions()
-	var results []map[string]interface{}
+
+	grouped := make(map[string][]map[string]interface{})
 	for rows.Next() {
 		values, err := rows.Values()
 		if err != nil {
 			continue
 		}
 		row := make(map[string]interface{}, len(values))
+		var recordingID string
 		for i, v := range values {
-			row[string(descriptions[i].Name)] = v
+			col := string(descriptions[i].Name)
+			row[col] = v
+			if col == "recording_id" {
+				if id, ok := v.(string); ok {
+					recordingID = id
+				}
+			}
 		}
-		results = append(results, row)
+		grouped[recordingID] = append(grouped[recordingID], row)
 	}
-	if results == nil {
-		results = []map[string]interface{}{}
+
+	for recID, items := range grouped {
+		info, ok := recMap[recID]
+		if !ok {
+			continue
+		}
+		entry, err := zw.Create(fmt.Sprintf("%s/%s_%s.json", info.datePath, info.title, label))
+		if err != nil {
+			continue
+		}
+		_ = json.NewEncoder(entry).Encode(items)
 	}
-	return json.NewEncoder(entry).Encode(results)
+	return nil
 }
