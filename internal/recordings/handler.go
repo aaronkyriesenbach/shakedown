@@ -77,7 +77,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	mimeType, ext, validated, err := ValidateAudioMagicBytes(file)
+    mimeType, ext, validated, err := ValidateMediaMagicBytes(file)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%v"}`, err), http.StatusUnprocessableEntity)
 		return
