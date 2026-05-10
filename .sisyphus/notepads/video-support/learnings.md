@@ -60,3 +60,5 @@
 - Added PlaybackFilename and SnippetFilename helpers in processing.go.
 
 These changes compile; go build ./internal/recordings/... passed locally.
+
+- T7: `processRecording` now branches on `job.MediaType`, preserving the audio pipeline while video uses MP4 playback generation plus thumbnail extraction without waveform generation.
