@@ -14,16 +14,19 @@ import (
 
 // ffprobeResult holds output parsed from ffprobe JSON.
 type ffprobeResult struct {
-	Format struct {
-		Duration string            `json:"duration"`
-		BitRate  string            `json:"bit_rate"`
-		Tags     map[string]string `json:"tags"`
-	} `json:"format"`
-	Streams []struct {
-		CodecType  string `json:"codec_type"`
-		SampleRate string `json:"sample_rate"`
-		Channels   int    `json:"channels"`
-	} `json:"streams"`
+    Format struct {
+        Duration string            `json:"duration"`
+        BitRate  string            `json:"bit_rate"`
+        Tags     map[string]string `json:"tags"`
+    } `json:"format"`
+    Streams []struct {
+        CodecType  string `json:"codec_type"`
+        SampleRate string `json:"sample_rate"`
+        Channels   int    `json:"channels"`
+        Width      int    `json:"width"`
+        Height     int    `json:"height"`
+        CodecName  string `json:"codec_name"`
+    } `json:"streams"`
 }
 
 // runFFprobe runs ffprobe on the given file and returns parsed metadata.
@@ -98,9 +101,26 @@ func runAudiowaveform(ctx context.Context, inputPath, outputPath string) error {
 
 // ProcessingJob holds the data needed to process a recording.
 type ProcessingJob struct {
-	RecordingID string
-	StorageRoot string
-	FileExt     string
+    RecordingID string
+    StorageRoot string
+    FileExt     string
+    MediaType   string
+}
+
+// PlaybackFilename returns the playback file name for the given media type.
+func PlaybackFilename(mediaType string) string {
+    if mediaType == "video" {
+        return "playback.mp4"
+    }
+    return "playback.m4a"
+}
+
+// SnippetFilename returns the snippet file name for the given media type.
+func SnippetFilename(mediaType string) string {
+    if mediaType == "video" {
+        return "snippet.mp4"
+    }
+    return "snippet.m4a"
 }
 
 // processRecording runs the full pipeline: ffprobe -> ffmpeg -> audiowaveform.
