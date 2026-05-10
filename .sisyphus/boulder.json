@@ -18,6 +18,15 @@
       "agent": "Sisyphus-Junior",
       "category": "quick",
       "updated_at": "2026-05-10T16:51:46.502Z"
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "Repository Query Updates — New Columns in All Queries",
+      "session_id": "ses_1ed2d651bffeU3rHvmSRLit9Pr",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-10T17:02:29.677Z"
     }
   }
 }
