@@ -10,37 +10,48 @@ import (
 
 // Service wires together the repository, storage, and processing pipeline.
 type Service struct {
-	repo       *Repository
-	storage    *LocalStorage
-	logger     *zap.Logger
-	maxWorkers int
-	sem        chan struct{}
-	wg         sync.WaitGroup
+    repo       *Repository
+    storage    *LocalStorage
+    logger     *zap.Logger
+    audioSem   chan struct{}
+    videoSem   chan struct{}
+    wg         sync.WaitGroup
 }
 
 // NewService creates a new recordings Service with a bounded processing pool.
-func NewService(repo *Repository, storage *LocalStorage, logger *zap.Logger, maxWorkers int) *Service {
-	if maxWorkers <= 0 {
-		maxWorkers = 4
-	}
-	return &Service{
-		repo:       repo,
-		storage:    storage,
-		logger:     logger,
-		maxWorkers: maxWorkers,
-		sem:        make(chan struct{}, maxWorkers),
-	}
+func NewService(repo *Repository, storage *LocalStorage, logger *zap.Logger, maxAudioWorkers, maxVideoWorkers int) *Service {
+    if maxAudioWorkers <= 0 {
+        maxAudioWorkers = 4
+    }
+    if maxVideoWorkers <= 0 {
+        maxVideoWorkers = 2
+    }
+    return &Service{
+        repo:     repo,
+        storage:  storage,
+        logger:   logger,
+        audioSem: make(chan struct{}, maxAudioWorkers),
+        videoSem: make(chan struct{}, maxVideoWorkers),
+    }
 }
 
 // Enqueue submits a processing job to the background goroutine pool.
 // It returns immediately; processing happens asynchronously.
 func (svc *Service) Enqueue(job ProcessingJob, timeoutSeconds int) {
-	svc.wg.Add(1)
-	go func() {
-		defer svc.wg.Done()
+    svc.wg.Add(1)
+    go func() {
+        defer svc.wg.Done()
 
-		svc.sem <- struct{}{}
-		defer func() { <-svc.sem }()
+        // Select semaphore based on media type
+        var sem chan struct{}
+        if job.MediaType == "video" {
+            sem = svc.videoSem
+        } else {
+            sem = svc.audioSem
+        }
+
+        sem <- struct{}{}
+        defer func() { <-sem }()
 
 		timeout := time.Duration(timeoutSeconds) * time.Second
 		if timeout <= 0 {

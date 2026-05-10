@@ -75,20 +75,22 @@ func (repo *Repository) Create(ctx context.Context, input CreateRecordingInput) 
 	var rec Recording
 	err := repo.db.QueryRow(ctx, `
 		INSERT INTO recordings (id, title, file_ext, file_size_bytes, mime_type,
-			storage_path, uploaded_by, recorded_at, recorded_at_source)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			storage_path, uploaded_by, recorded_at, recorded_at_source, media_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, title, file_ext, file_size_bytes, mime_type,
 			storage_path, uploaded_by, recorded_at, recorded_at_source,
 			duration_seconds, bitrate, sample_rate, channels,
 			playback_ready, waveform_ready, processing_error, processing_step,
+			media_type, thumbnail_ready, video_width, video_height,
 			created_at, updated_at, deleted_at
 	`, id, input.Title, input.FileExt, input.FileSizeBytes, input.MimeType,
-		input.StoragePath, input.UploadedBy, input.RecordedAt, input.RecordedAtSource,
+		input.StoragePath, input.UploadedBy, input.RecordedAt, input.RecordedAtSource, input.MediaType,
 	).Scan(
 		&rec.ID, &rec.Title, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
 		&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
 		&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
 		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
+		&rec.MediaType, &rec.ThumbnailReady, &rec.VideoWidth, &rec.VideoHeight,
 		&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
 	)
 	if err != nil {
@@ -121,20 +123,22 @@ func (repo *Repository) createWithAutoTitle(ctx context.Context, id string, inpu
 	var rec Recording
 	err = tx.QueryRow(ctx, `
 		INSERT INTO recordings (id, title, file_ext, file_size_bytes, mime_type,
-			storage_path, uploaded_by, recorded_at, recorded_at_source)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			storage_path, uploaded_by, recorded_at, recorded_at_source, media_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, title, file_ext, file_size_bytes, mime_type,
 			storage_path, uploaded_by, recorded_at, recorded_at_source,
 			duration_seconds, bitrate, sample_rate, channels,
 			playback_ready, waveform_ready, processing_error, processing_step,
+			media_type, thumbnail_ready, video_width, video_height,
 			created_at, updated_at, deleted_at
 	`, id, input.Title, input.FileExt, input.FileSizeBytes, input.MimeType,
-		input.StoragePath, input.UploadedBy, input.RecordedAt, input.RecordedAtSource,
+		input.StoragePath, input.UploadedBy, input.RecordedAt, input.RecordedAtSource, input.MediaType,
 	).Scan(
 		&rec.ID, &rec.Title, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
 		&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
 		&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
 		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
+		&rec.MediaType, &rec.ThumbnailReady, &rec.VideoWidth, &rec.VideoHeight,
 		&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
 	)
 	if err != nil {
@@ -156,6 +160,7 @@ func (repo *Repository) GetByID(ctx context.Context, id string) (*Recording, err
 			storage_path, uploaded_by, recorded_at, recorded_at_source,
 			duration_seconds, bitrate, sample_rate, channels,
 			playback_ready, waveform_ready, processing_error, processing_step,
+			media_type, thumbnail_ready, video_width, video_height,
 			created_at, updated_at, deleted_at
 		FROM recordings
 		WHERE id = $1 AND deleted_at IS NULL
@@ -164,6 +169,7 @@ func (repo *Repository) GetByID(ctx context.Context, id string) (*Recording, err
 		&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
 		&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
 		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
+		&rec.MediaType, &rec.ThumbnailReady, &rec.VideoWidth, &rec.VideoHeight,
 		&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -194,6 +200,8 @@ func (repo *Repository) UpdateProcessingResult(
 	bitrate, sampleRate, channels int,
 	playbackReady, waveformReady bool,
 	processingError *string,
+	thumbnailReady bool,
+	videoWidth, videoHeight *int,
 ) error {
 	step := "complete"
 	if processingError != nil {
@@ -204,9 +212,11 @@ func (repo *Repository) UpdateProcessingResult(
 			duration_seconds = $2, bitrate = $3, sample_rate = $4, channels = $5,
 			playback_ready = $6, waveform_ready = $7, processing_error = $8,
 			processing_step = $9,
+			thumbnail_ready = $10, video_width = $11, video_height = $12,
 			updated_at = now()
 		WHERE id = $1
-	`, id, durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, processingError, step)
+	`, id, durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, processingError, step,
+		thumbnailReady, videoWidth, videoHeight)
 	if err != nil {
 		return fmt.Errorf("recordings: failed to update processing result: %w", err)
 	}
@@ -298,6 +308,7 @@ func (repo *Repository) List(ctx context.Context, f ListFilter) (*ListResult, er
 			r.storage_path, r.uploaded_by, r.recorded_at, r.recorded_at_source,
 			r.duration_seconds, r.bitrate, r.sample_rate, r.channels,
 			r.playback_ready, r.waveform_ready, r.processing_error, r.processing_step,
+			r.media_type, r.thumbnail_ready, r.video_width, r.video_height,
 			r.created_at, r.updated_at, r.deleted_at
 		FROM recordings r
 		%s %s
@@ -318,6 +329,7 @@ func (repo *Repository) List(ctx context.Context, f ListFilter) (*ListResult, er
 			&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
 			&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
 			&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
+			&rec.MediaType, &rec.ThumbnailReady, &rec.VideoWidth, &rec.VideoHeight,
 			&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
 		); err != nil {
 			return nil, fmt.Errorf("recordings: scan error: %w", err)
@@ -353,12 +365,14 @@ func (repo *Repository) Update(ctx context.Context, id string, title *string, re
 			storage_path, uploaded_by, recorded_at, recorded_at_source,
 			duration_seconds, bitrate, sample_rate, channels,
 			playback_ready, waveform_ready, processing_error, processing_step,
+			media_type, thumbnail_ready, video_width, video_height,
 			created_at, updated_at, deleted_at
 	`, id, title, recordedAt).Scan(
 		&rec.ID, &rec.Title, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
 		&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
 		&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
 		&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
+		&rec.MediaType, &rec.ThumbnailReady, &rec.VideoWidth, &rec.VideoHeight,
 		&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
 	)
 	if err != nil {

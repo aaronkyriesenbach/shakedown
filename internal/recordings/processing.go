@@ -67,6 +67,56 @@ func runFFmpeg(ctx context.Context, inputPath, outputPath string) error {
 	return nil
 }
 
+// runFFmpegVideo transcodes input to H.264/AAC MP4 with a 1080p cap.
+func runFFmpegVideo(ctx context.Context, inputPath, outputPath string, sourceHeight int) error {
+	args := []string{"-i", inputPath}
+
+	if sourceHeight > 1080 {
+		args = append(args, "-vf", "scale=-2:1080")
+		args = append(args, "-c:v", "libx264", "-preset", "medium", "-crf", "23")
+	} else {
+		args = append(args, "-c:v", "libx264", "-preset", "medium", "-crf", "23")
+	}
+
+	args = append(args,
+		"-c:a", "aac",
+		"-b:a", "192k",
+		"-movflags", "+faststart",
+		"-y",
+		outputPath,
+	)
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ffmpeg video: failed: %w (output: %s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// extractThumbnail extracts a representative JPEG frame from a video.
+func extractThumbnail(ctx context.Context, inputPath, outputPath string, durationSeconds float64) error {
+	seek := durationSeconds * 0.1
+	if seek < 0.1 {
+		seek = 0.1
+	}
+
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-ss", fmt.Sprintf("%.3f", seek),
+		"-i", inputPath,
+		"-vframes", "1",
+		"-vf", "scale=640:-2",
+		"-q:v", "2",
+		"-y",
+		outputPath,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ffmpeg thumbnail: failed: %w (output: %s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // runAudiowaveform generates waveform peaks JSON using BBC audiowaveform.
 // It first converts the input to WAV via ffmpeg since audiowaveform only
 // supports WAV, MP3, FLAC, and Ogg natively.
@@ -123,12 +173,23 @@ func SnippetFilename(mediaType string) string {
 	return "snippet.m4a"
 }
 
-// processRecording runs the full pipeline: ffprobe -> ffmpeg -> audiowaveform.
-// It updates the DB record with results at each stage.
-// Errors are logged but do not crash the server.
+// processRecording runs the appropriate processing pipeline for the media type.
 func (svc *Service) processRecording(ctx context.Context, job ProcessingJob) {
 	recordingDir := filepath.Join(job.StorageRoot, job.RecordingID)
 	originalPath := filepath.Join(recordingDir, "original"+job.FileExt)
+
+	if job.MediaType == "video" {
+		svc.processVideoRecording(ctx, job, recordingDir, originalPath)
+		return
+	}
+
+	svc.processAudioRecording(ctx, job, recordingDir, originalPath)
+}
+
+// processAudioRecording runs the full pipeline: ffprobe -> ffmpeg -> audiowaveform.
+// It updates the DB record with results at each stage.
+// Errors are logged but do not crash the server.
+func (svc *Service) processAudioRecording(ctx context.Context, job ProcessingJob, recordingDir, originalPath string) {
 	playbackPath := filepath.Join(recordingDir, "playback.m4a")
 	waveformPath := filepath.Join(recordingDir, "waveform.json")
 
@@ -149,7 +210,7 @@ func (svc *Service) processRecording(ctx context.Context, job ProcessingJob) {
 		errStr := err.Error()
 		procErr = &errStr
 		_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-			0, 0, 0, 0, false, false, procErr)
+			0, 0, 0, 0, false, false, procErr, false, nil, nil)
 		return
 	}
 
@@ -175,7 +236,7 @@ func (svc *Service) processRecording(ctx context.Context, job ProcessingJob) {
 		errStr := err.Error()
 		procErr = &errStr
 		_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-			durationSeconds, bitrate, sampleRate, channels, false, false, procErr)
+			durationSeconds, bitrate, sampleRate, channels, false, false, procErr, false, nil, nil)
 		return
 	}
 	playbackReady = true
@@ -191,7 +252,80 @@ func (svc *Service) processRecording(ctx context.Context, job ProcessingJob) {
 	}
 
 	_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-		durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, procErr)
+		durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, procErr, false, nil, nil)
+}
+
+func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob, recordingDir, originalPath string) {
+	playbackPath := filepath.Join(recordingDir, PlaybackFilename("video"))
+	thumbnailPath := filepath.Join(recordingDir, "thumbnail.jpg")
+
+	var (
+		durationSeconds float64
+		bitrate         int
+		sampleRate      int
+		channels        int
+		videoWidth      int
+		videoHeight     int
+		playbackReady   bool
+		thumbnailReady  bool
+		procErr         *string
+	)
+
+	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "analyzing")
+
+	probeResult, err := runFFprobe(ctx, originalPath)
+	if err != nil {
+		errStr := err.Error()
+		procErr = &errStr
+		_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+			0, 0, 0, 0, false, false, procErr, false, nil, nil)
+		return
+	}
+
+	if d, err := strconv.ParseFloat(probeResult.Format.Duration, 64); err == nil {
+		durationSeconds = d
+	}
+	if b, err := strconv.Atoi(probeResult.Format.BitRate); err == nil {
+		bitrate = b
+	}
+	for _, stream := range probeResult.Streams {
+		switch stream.CodecType {
+		case "audio":
+			if sr, err := strconv.Atoi(stream.SampleRate); err == nil {
+				sampleRate = sr
+			}
+			channels = stream.Channels
+		case "video":
+			videoWidth = stream.Width
+			videoHeight = stream.Height
+		}
+	}
+
+	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "transcoding")
+
+	if err := runFFmpegVideo(ctx, originalPath, playbackPath, videoHeight); err != nil {
+		errStr := err.Error()
+		procErr = &errStr
+		_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+			durationSeconds, bitrate, sampleRate, channels, false, false, procErr, false, nil, nil)
+		return
+	}
+	playbackReady = true
+
+	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "extracting_thumbnail")
+
+	if err := extractThumbnail(ctx, originalPath, thumbnailPath, durationSeconds); err != nil {
+		errStr := fmt.Sprintf("thumbnail extraction failed: %v", err)
+		procErr = &errStr
+	} else {
+		thumbnailReady = true
+		procErr = nil
+	}
+
+	vw := videoWidth
+	vh := videoHeight
+	_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+		durationSeconds, bitrate, sampleRate, channels, playbackReady, false, procErr, thumbnailReady, &vw, &vh)
 }
 
 // parseDateFromTags tries to extract recorded_at from ffprobe tags.

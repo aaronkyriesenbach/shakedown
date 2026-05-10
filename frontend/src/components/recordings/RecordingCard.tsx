@@ -1,10 +1,11 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Music, Clock, HardDrive, AlertCircle, RefreshCw } from 'lucide-react';
+import { Music, Video, Clock, HardDrive, AlertCircle, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { formatDuration, formatDate, formatFileSize } from '@/lib/format';
-import type { Recording } from '@/api/recordings';
+import { type Recording, thumbnailUrl } from '@/api/recordings';
 import type { Tag } from '@/api/tags';
 
 export type RecordingWithTags = Recording & { tags?: Tag[] };
@@ -15,13 +16,27 @@ interface RecordingCardProps {
 }
 
 export function RecordingCard({ recording, className }: RecordingCardProps) {
+  const [thumbnailError, setThumbnailError] = useState(false);
+
   return (
     <Card className={cn("group hover:border-indigo-500/50 transition-colors overflow-hidden", className)}>
       <Link to={`/recordings/${recording.id}`} className="block p-4">
         <div className="flex items-start justify-between gap-4 mb-3">
           <div className="flex items-center gap-3">
-            <div className="bg-muted w-10 h-10 rounded-md flex items-center justify-center flex-shrink-0 text-muted-foreground group-hover:text-indigo-400 transition-colors">
-              <Music className="w-5 h-5" />
+            <div className="bg-muted w-10 h-10 rounded-md flex items-center justify-center flex-shrink-0 text-muted-foreground group-hover:text-indigo-400 transition-colors overflow-hidden relative">
+              {recording.media_type === 'video' && recording.thumbnail_ready && !thumbnailError ? (
+                <img
+                  src={thumbnailUrl(recording.id)}
+                  alt={recording.title}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                  onError={() => setThumbnailError(true)}
+                />
+              ) : recording.media_type === 'video' ? (
+                <Video className="w-5 h-5" />
+              ) : (
+                <Music className="w-5 h-5" />
+              )}
             </div>
             <div>
               <h3 className="font-semibold text-lg leading-tight line-clamp-1 group-hover:text-indigo-400 transition-colors">
@@ -44,6 +59,13 @@ export function RecordingCard({ recording, className }: RecordingCardProps) {
           </div>
           
           <div className="flex flex-col items-end gap-2 flex-shrink-0">
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-muted-foreground/30 text-muted-foreground">
+              {recording.media_type === 'video' ? (
+                <><Video className="w-2.5 h-2.5 mr-1" />Video</>
+              ) : (
+                <><Music className="w-2.5 h-2.5 mr-1" />Audio</>
+              )}
+            </Badge>
             {recording.processing_error ? (
               <Badge variant="destructive" className="flex items-center gap-1">
                 <AlertCircle className="w-3 h-3" />
@@ -56,6 +78,7 @@ export function RecordingCard({ recording, className }: RecordingCardProps) {
                 {recording.processing_step === 'analyzing' && 'Analyzing'}
                 {recording.processing_step === 'transcoding' && 'Transcoding'}
                 {recording.processing_step === 'generating_waveform' && 'Generating waveform'}
+                {recording.processing_step === 'extracting_thumbnail' && 'Extracting thumbnail'}
               </Badge>
             ) : null}
           </div>

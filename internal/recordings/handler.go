@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -48,6 +49,7 @@ func (h *Handler) Routes(r chi.Router, requireAuth func(http.Handler) http.Handl
 		r.With(requireAuth).Get("/stream", h.streamRecording)
 		r.With(requireAuth).Get("/download", h.downloadRecording)
 		r.With(requireAuth).Get("/waveform", h.waveformData)
+		r.With(requireAuth).Get("/thumbnail", h.thumbnailRecording)
 		r.With(requireAuth).Get("/segment", h.segmentRecording)
 		r.Route("/songs", func(r chi.Router) { songHandler.Routes(r) })
 		r.Route("/comments", func(r chi.Router) { commentHandler.Routes(r) })
@@ -62,7 +64,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	maxBytes := h.cfg.UploadMaxSizeMB * 1024 * 1024
+	maxBytes := h.cfg.VideoUploadMaxSizeMB * 1024 * 1024
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
@@ -81,6 +83,11 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%v"}`, err), http.StatusUnprocessableEntity)
 		return
+	}
+
+	mediaType := "audio"
+	if strings.HasPrefix(mimeType, "video/") {
+		mediaType = "video"
 	}
 
 	tmpFile, err := os.CreateTemp(h.svc.storage.root, "shakedown-upload-*"+ext)
@@ -128,6 +135,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 		FileExt:          ext,
 		FileSizeBytes:    written,
 		MimeType:         mimeType,
+		MediaType:        mediaType,
 		StoragePath:      "",
 		UploadedBy:       user.ID,
 		RecordedAt:       recordedAt,
@@ -159,11 +167,16 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	rec.StoragePath = storagePath
 
+	timeout := h.cfg.ProcessingTimeoutSeconds
+	if mediaType == "video" {
+		timeout = h.cfg.VideoProcessingTimeoutSeconds
+	}
 	h.svc.Enqueue(ProcessingJob{
 		RecordingID: rec.ID,
 		StorageRoot: h.svc.storage.root,
 		FileExt:     ext,
-	}, h.cfg.ProcessingTimeoutSeconds)
+		MediaType:   mediaType,
+	}, timeout)
 
 	h.logger.Info("recording uploaded", zap.String("id", rec.ID), zap.Int64("bytes", written))
 
@@ -282,7 +295,7 @@ func (h *Handler) streamRecording(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filePath := filepath.Join(h.svc.storage.root, rec.ID, "playback.m4a")
+	filePath := filepath.Join(h.svc.storage.root, rec.ID, PlaybackFilename(rec.MediaType))
 	f, err := os.Open(filePath)
 	if err != nil {
 		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
@@ -296,8 +309,12 @@ func (h *Handler) streamRecording(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "audio/mp4")
-	http.ServeContent(w, r, "playback.m4a", fi.ModTime(), f)
+	contentType := "audio/mp4"
+	if rec.MediaType == "video" {
+		contentType = "video/mp4"
+	}
+	w.Header().Set("Content-Type", contentType)
+	http.ServeContent(w, r, PlaybackFilename(rec.MediaType), fi.ModTime(), f)
 }
 
 func (h *Handler) downloadRecording(w http.ResponseWriter, r *http.Request) {
@@ -358,6 +375,37 @@ func (h *Handler) waveformData(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "waveform.json", fi.ModTime(), f)
 }
 
+func (h *Handler) thumbnailRecording(w http.ResponseWriter, r *http.Request) {
+	recordingID := chi.URLParam(r, "recordingID")
+	rec, err := h.svc.repo.GetByID(r.Context(), recordingID)
+	if err != nil || rec == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if !rec.ThumbnailReady {
+		http.Error(w, `{"error":"thumbnail not ready"}`, http.StatusNotFound)
+		return
+	}
+
+	filePath := filepath.Join(h.svc.storage.root, rec.ID, "thumbnail.jpg")
+	f, err := os.Open(filePath)
+	if err != nil {
+		http.Error(w, `{"error":"thumbnail not found"}`, http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	http.ServeContent(w, r, "thumbnail.jpg", fi.ModTime(), f)
+}
+
 func (h *Handler) segmentRecording(w http.ResponseWriter, r *http.Request) {
 	recordingID := chi.URLParam(r, "recordingID")
 	rec, err := h.svc.repo.GetByID(r.Context(), recordingID)
@@ -387,20 +435,36 @@ func (h *Handler) segmentRecording(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inputPath := filepath.Join(h.svc.storage.root, rec.ID, "playback.m4a")
+	inputPath := filepath.Join(h.svc.storage.root, rec.ID, PlaybackFilename(rec.MediaType))
 	duration := end - start
 
-	w.Header().Set("Content-Type", "audio/mp4")
-	w.Header().Set("Content-Disposition", `attachment; filename="segment.m4a"`)
+	contentType := "audio/mp4"
+	if rec.MediaType == "video" {
+		contentType = "video/mp4"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, SnippetFilename(rec.MediaType)))
 
-	cmd := exec.CommandContext(r.Context(), "ffmpeg",
-		"-ss", strconv.FormatFloat(start, 'f', 3, 64),
-		"-i", inputPath,
-		"-t", strconv.FormatFloat(duration, 'f', 3, 64),
-		"-c:a", "aac", "-b:a", "192k",
-		"-f", "mp4", "-movflags", "frag_keyframe+empty_moov",
-		"pipe:1",
-	)
+	var cmd *exec.Cmd
+	if rec.MediaType == "video" {
+		cmd = exec.CommandContext(r.Context(), "ffmpeg",
+			"-ss", strconv.FormatFloat(start, 'f', 3, 64),
+			"-i", inputPath,
+			"-t", strconv.FormatFloat(duration, 'f', 3, 64),
+			"-c:v", "copy", "-c:a", "copy",
+			"-f", "mp4", "-movflags", "frag_keyframe+empty_moov",
+			"pipe:1",
+		)
+	} else {
+		cmd = exec.CommandContext(r.Context(), "ffmpeg",
+			"-ss", strconv.FormatFloat(start, 'f', 3, 64),
+			"-i", inputPath,
+			"-t", strconv.FormatFloat(duration, 'f', 3, 64),
+			"-c:a", "aac", "-b:a", "192k",
+			"-f", "mp4", "-movflags", "frag_keyframe+empty_moov",
+			"pipe:1",
+		)
+	}
 	cmd.Stdout = w
 	if err := cmd.Run(); err != nil {
 		h.logger.Error("segment ffmpeg failed", zap.Error(err))
