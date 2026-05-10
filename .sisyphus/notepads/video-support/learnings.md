@@ -49,6 +49,10 @@
 - Upload limit: 500MB (config.UploadMaxSizeMB) — video needs 4GB
 
 ### Changes made (2026-05-10)
+ - Added video-related TypeScript fields to Recording interface and CreateRecordingInput
+ - Added 'extracting_thumbnail' processing step and updated ProcessingStatus component to include it
+ - Added thumbnailUrl and shareThumbnailUrl helpers
+ - Verified TypeScript build passes (npx tsc -b --noEmit)
 
 - Added MediaType, ThumbnailReady, VideoWidth, VideoHeight to Recording struct in repository.go.
 - Added MediaType to CreateRecordingInput in repository.go.
