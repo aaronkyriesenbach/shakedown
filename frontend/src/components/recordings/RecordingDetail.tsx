@@ -10,10 +10,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatDuration, formatDate, formatFileSize } from '@/lib/format';
 import { WaveformPlayer, type WaveformPlayerRef } from '@/components/audio/WaveformPlayer';
+import { VideoPlayer, type VideoPlayerRef } from '@/components/video/VideoPlayer';
 import { RecordingEditDialog } from './RecordingEditDialog';
 import { SongMarkerList } from '@/components/songs/SongMarkerList';
 import { ShareDialog } from '@/components/shares/ShareDialog';
 import { downloadUrl, segmentUrl, useDeleteRecording, type Recording } from '@/api/recordings';
+import { useSongs } from '@/api/songs';
 import { useComments } from '@/api/comments';
 import { useMe } from '@/api/auth';
 import { CommentThread } from '@/components/comments/CommentThread';
@@ -31,6 +33,7 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
   const navigate = useNavigate();
   const deleteMutation = useDeleteRecording(recording.id);
   const waveformRef = useRef<WaveformPlayerRef>(null);
+  const videoRef = useRef<VideoPlayerRef>(null);
   
   const [currentTime, setCurrentTime] = useState(0);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -41,6 +44,7 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
 
   const { data: comments = [], isLoading: isLoadingComments } = useComments(recording.id);
   const { data: currentUser } = useMe();
+  const { data: songs } = useSongs(recording.id);
 
   const handleDelete = () => {
     deleteMutation.mutate(undefined, {
@@ -67,7 +71,11 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
   };
 
   const handleSeek = (seconds: number) => {
-    waveformRef.current?.seekTo(seconds);
+    if (recording.media_type === 'video') {
+      videoRef.current?.seekTo(seconds);
+    } else {
+      waveformRef.current?.seekTo(seconds);
+    }
   };
 
   return (
@@ -94,11 +102,22 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
       </div>
 
       <div className="w-full">
-        <WaveformPlayer 
-          ref={waveformRef} 
-          recording={recording} 
-          onTimeUpdate={setCurrentTime} 
-        />
+        {recording.media_type === 'video' ? (
+          <VideoPlayer
+            ref={videoRef}
+            recording={recording}
+            onTimeUpdate={setCurrentTime}
+            onSeek={handleSeek}
+            songs={songs ?? []}
+            onMarkerClick={handleSeek}
+          />
+        ) : (
+          <WaveformPlayer 
+            ref={waveformRef} 
+            recording={recording} 
+            onTimeUpdate={setCurrentTime} 
+          />
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -118,14 +137,24 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
                 <span className="text-muted-foreground block mb-1">Date Recorded</span>
                 <span className="font-medium">{formatDate(recording.recorded_at)}</span>
               </div>
-              <div>
-                <span className="text-muted-foreground block mb-1">Channels</span>
-                <span className="font-medium">{recording.channels || 'Unknown'}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block mb-1">Sample Rate</span>
-                <span className="font-medium">{recording.sample_rate ? `${recording.sample_rate} Hz` : 'Unknown'}</span>
-              </div>
+              {recording.media_type === 'video' && recording.video_width && recording.video_height && (
+                <div>
+                  <span className="text-muted-foreground block mb-1">Resolution</span>
+                  <span className="font-medium">{recording.video_width} × {recording.video_height}</span>
+                </div>
+              )}
+              {recording.media_type !== 'video' && (
+                <div>
+                  <span className="text-muted-foreground block mb-1">Channels</span>
+                  <span className="font-medium">{recording.channels || 'Unknown'}</span>
+                </div>
+              )}
+              {recording.media_type !== 'video' && (
+                <div>
+                  <span className="text-muted-foreground block mb-1">Sample Rate</span>
+                  <span className="font-medium">{recording.sample_rate ? `${recording.sample_rate} Hz` : 'Unknown'}</span>
+                </div>
+              )}
               <div>
                 <span className="text-muted-foreground block mb-1">Bitrate</span>
                 <span className="font-medium">{recording.bitrate ? `${Math.round(recording.bitrate / 1000)} kbps` : 'Unknown'}</span>

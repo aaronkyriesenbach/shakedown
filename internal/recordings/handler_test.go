@@ -47,3 +47,32 @@ func TestWaveformData_Ready(t *testing.T) {
 func TestStreamRecording_NotReady(t *testing.T) {
 	t.Skip("requires RecordingRepository interface for mock injection — same as TestWaveformData_NotReady")
 }
+
+func TestThumbnailRouteRegistered(t *testing.T) {
+	cfg := &config.Config{StorageRoot: t.TempDir()}
+	h := NewHandler(nil, cfg, zap.NewNop())
+	r := chi.NewRouter()
+	requireAuth := func(next http.Handler) http.Handler { return next }
+	h.Routes(r, requireAuth, stubRouteHandler{}, stubRouteHandler{}, stubTagHandler{})
+}
+
+func TestPlaybackFilename(t *testing.T) {
+	if got := PlaybackFilename("audio"); got != "playback.m4a" {
+		t.Errorf("audio: got %q, want playback.m4a", got)
+	}
+	if got := PlaybackFilename("video"); got != "playback.mp4" {
+		t.Errorf("video: got %q, want playback.mp4", got)
+	}
+	if got := PlaybackFilename(""); got != "playback.m4a" {
+		t.Errorf("empty: got %q, want playback.m4a", got)
+	}
+}
+
+func TestSnippetFilename(t *testing.T) {
+	if got := SnippetFilename("audio"); got != "snippet.m4a" {
+		t.Errorf("audio: got %q, want snippet.m4a", got)
+	}
+	if got := SnippetFilename("video"); got != "snippet.mp4" {
+		t.Errorf("video: got %q, want snippet.mp4", got)
+	}
+}
