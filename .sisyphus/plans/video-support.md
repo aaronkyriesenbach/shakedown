@@ -197,7 +197,7 @@ Wave FINAL (Verification — after ALL tasks):
 
 ## TODOs
 
-- [ ] 1. DB Migration 004 — Video Support Schema
+- [x] 1. DB Migration 004 — Video Support Schema
 
   **What to do**:
   - Create `internal/database/migrations/004_video_support.up.sql`:
@@ -277,7 +277,7 @@ Wave FINAL (Verification — after ALL tasks):
   - Message: `feat(db): add video support migration 004`
   - Files: `internal/database/migrations/004_video_support.up.sql`, `internal/database/migrations/004_video_support.down.sql`
 
-- [ ] 2. Config Updates — Per-Media Timeout, Upload Limit, Worker Counts
+- [x] 2. Config Updates — Per-Media Timeout, Upload Limit, Worker Counts
 
   **What to do**:
   - In `internal/config/config.go`, add new config fields:
@@ -335,7 +335,7 @@ Wave FINAL (Verification — after ALL tasks):
   - Message: `feat(recordings): add video fields to structs and config`
   - Files: `internal/config/config.go`
 
-- [ ] 3. Go Struct Updates — Recording, ProcessingJob, ffprobeResult
+- [x] 3. Go Struct Updates — Recording, ProcessingJob, ffprobeResult
 
   **What to do**:
   - In `internal/recordings/repository.go`, add to `Recording` struct:
@@ -400,7 +400,7 @@ Wave FINAL (Verification — after ALL tasks):
   - Message: `feat(recordings): add video fields to structs and config`
   - Files: `internal/recordings/repository.go`, `internal/recordings/processing.go`
 
-- [ ] 4. Frontend TypeScript Types + URL Helpers
+- [x] 4. Frontend TypeScript Types + URL Helpers
 
   **What to do**:
   - In `frontend/src/api/recordings.ts`:
@@ -462,7 +462,7 @@ Wave FINAL (Verification — after ALL tasks):
   - Message: `feat(frontend): update types and upload form for video`
   - Files: `frontend/src/api/recordings.ts`, `frontend/src/api/shares.ts`
 
-- [ ] 5. Magic Byte Validation — Extend for Video Formats
+- [x] 5. Magic Byte Validation — Extend for Video Formats
 
   **What to do**:
   - Rename `ValidateAudioMagicBytes` to `ValidateMediaMagicBytes` in `internal/recordings/validation.go`

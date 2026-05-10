@@ -48,7 +48,7 @@ export function UploadForm() {
   const [uppy] = useState(() => {
     const u = new Uppy<UploadMeta, RecordingBody>({
       restrictions: {
-        allowedFileTypes: ['audio/*'],
+        allowedFileTypes: ['audio/*', 'video/mp4', 'video/quicktime'],
       },
     });
 
@@ -251,11 +251,12 @@ export function UploadForm() {
                     ) : !recording || recording.processing_step !== 'complete' ? (
                       <Badge variant="secondary" className="bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-amber-500/20 flex items-center gap-1">
                         <RefreshCw className="w-3 h-3 animate-spin" />
-                        {recording?.processing_step === 'queued' ? 'Queued' :
-                         recording?.processing_step === 'analyzing' ? 'Analyzing' :
-                         recording?.processing_step === 'transcoding' ? 'Transcoding' :
-                         recording?.processing_step === 'generating_waveform' ? 'Generating waveform' : 'Processing'}
-                      </Badge>
+                         {recording?.processing_step === 'queued' ? 'Queued' :
+                          recording?.processing_step === 'analyzing' ? 'Analyzing' :
+                          recording?.processing_step === 'transcoding' ? 'Transcoding' :
+                          recording?.processing_step === 'generating_waveform' ? 'Generating waveform' :
+                          recording?.processing_step === 'extracting_thumbnail' ? 'Extracting thumbnail' : 'Processing'}
+                       </Badge>
                     ) : (
                       <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-emerald-500/20 flex items-center gap-1">
                         <CheckCircle2 className="w-3 h-3" />

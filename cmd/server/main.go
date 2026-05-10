@@ -82,8 +82,8 @@ func main() {
 			logger.Fatal("failed to initialize storage", zap.Error(err))
 		}
 		recRepo := recordings.NewRepository(db)
-		recSvc = recordings.NewService(recRepo, store, logger, cfg.ProcessingMaxWorkers)
-		recHandler = recordings.NewHandler(recSvc, cfg, logger)
+        recSvc = recordings.NewService(recRepo, store, logger, cfg.ProcessingMaxWorkers, cfg.VideoProcessingMaxWorkers)
+        recHandler = recordings.NewHandler(recSvc, cfg, logger)
 
 		songRepo := songs.NewRepository(db)
 		songHandler = songs.NewHandler(songRepo, logger)
