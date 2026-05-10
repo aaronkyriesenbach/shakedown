@@ -2,6 +2,7 @@ import { useParams, Link } from 'react-router-dom';
 import { Download, Loader2, Calendar, Clock, Music } from 'lucide-react';
 import { useShare, shareStreamUrl, shareWaveformUrl, shareDownloadUrl } from '@/api/shares';
 import { WaveformPlayer } from '@/components/audio/WaveformPlayer';
+import { VideoPlayer } from '@/components/video/VideoPlayer';
 import { formatDuration, formatDate } from '@/lib/format';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -56,7 +57,7 @@ export default function SharePage() {
       <main className="flex-1 container max-w-4xl mx-auto py-8 px-4 flex flex-col gap-6">
         <div className="flex flex-col gap-2">
           <h1 className="text-3xl font-bold break-words">
-            {share.label || recording?.title || 'Shared Audio'}
+            {share.label || recording?.title || 'Shared Recording'}
           </h1>
           {recording && (
             <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
@@ -83,25 +84,28 @@ export default function SharePage() {
         </div>
 
         {recording ? (
-        <Card className="p-6">
-          {recording ? (
-            <WaveformPlayer 
-              recording={hasSnippet
-                ? { ...recording, duration_seconds: (share.end_seconds ?? 0) - (share.start_seconds ?? 0) }
-                : recording}
-              audioUrlOverride={shareStreamUrl(share.token)}
-              peaksUrlOverride={shareWaveformUrl(share.token)}
-            />
-          ) : (
-            <div className="h-24 flex items-center justify-center bg-muted/30 rounded-md">
-              <span className="text-muted-foreground">Audio player unavailable</span>
-            </div>
-          )}
-        </Card>
+          <Card className="p-6">
+            {recording.media_type === 'video' ? (
+              <VideoPlayer
+                recording={hasSnippet
+                  ? { ...recording, duration_seconds: (share.end_seconds ?? 0) - (share.start_seconds ?? 0) }
+                  : recording}
+                streamUrlOverride={shareStreamUrl(share.token)}
+              />
+            ) : (
+              <WaveformPlayer 
+                recording={hasSnippet
+                  ? { ...recording, duration_seconds: (share.end_seconds ?? 0) - (share.start_seconds ?? 0) }
+                  : recording}
+                audioUrlOverride={shareStreamUrl(share.token)}
+                peaksUrlOverride={shareWaveformUrl(share.token)}
+              />
+            )}
+          </Card>
         ) : (
           <Card className="p-6 flex flex-col items-center justify-center min-h-[200px] text-muted-foreground">
             <Music className="w-8 h-8 mb-4 opacity-50" />
-            <p>Audio player requires recording metadata.</p>
+            <p>Player requires recording metadata.</p>
           </Card>
         )}
 

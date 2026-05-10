@@ -12,6 +12,7 @@ export interface VideoPlayerProps {
   onTimeUpdate?: (time: number) => void;
   onSeek?: (time: number) => void;
   songs?: Song[];
+  onMarkerClick?: (startSeconds: number) => void;
   className?: string;
 }
 
@@ -20,7 +21,7 @@ export interface VideoPlayerRef {
 }
 
 export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
-  ({ recording, streamUrlOverride, onTimeUpdate, onSeek, songs, className }, ref) => {
+  ({ recording, streamUrlOverride, onTimeUpdate, onSeek, songs, onMarkerClick, className }, ref) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const videoUrl = streamUrlOverride ?? streamUrl(recording.id);
     const posterUrl = recording.thumbnail_ready ? thumbnailUrl(recording.id) : undefined;
@@ -103,7 +104,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           onSeek={seek}
           onFullscreen={handleFullscreen}
           songs={songs}
-          onMarkerClick={seekToTime}
+          onMarkerClick={onMarkerClick ?? seekToTime}
         />
       </div>
     );

@@ -190,7 +190,7 @@ func (svc *Service) processRecording(ctx context.Context, job ProcessingJob) {
 // It updates the DB record with results at each stage.
 // Errors are logged but do not crash the server.
 func (svc *Service) processAudioRecording(ctx context.Context, job ProcessingJob, recordingDir, originalPath string) {
-	playbackPath := filepath.Join(recordingDir, "playback.m4a")
+	playbackPath := filepath.Join(recordingDir, PlaybackFilename("audio"))
 	waveformPath := filepath.Join(recordingDir, "waveform.json")
 
 	var (
@@ -346,31 +346,47 @@ func parseDateFromTags(tags map[string]string) time.Time {
 	return time.Time{}
 }
 
-// ExtractSegment extracts a section of an audio file and generates a waveform for it.
-// inputPath is the source playback file. outputDir will contain snippet.m4a and waveform.json.
-func ExtractSegment(ctx context.Context, inputPath, outputDir string, startSec, endSec float64) error {
+// ExtractSegment extracts a section of a media file into a snippet.
+// inputPath is the source playback file. outputDir will contain the snippet file and,
+// for audio media types, waveform.json. mediaType should be "audio" or "video":
+// audio uses AAC re-encode and generates a waveform; video uses stream copy and skips waveform.
+func ExtractSegment(ctx context.Context, inputPath, outputDir string, startSec, endSec float64, mediaType string) error {
 	if err := os.MkdirAll(outputDir, 0o750); err != nil {
 		return fmt.Errorf("extract segment: mkdir: %w", err)
 	}
 
-	snippetPath := filepath.Join(outputDir, "snippet.m4a")
+	snippetPath := filepath.Join(outputDir, SnippetFilename(mediaType))
 	duration := endSec - startSec
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-y",
-		"-ss", strconv.FormatFloat(startSec, 'f', 3, 64),
-		"-i", inputPath,
-		"-t", strconv.FormatFloat(duration, 'f', 3, 64),
-		"-c:a", "aac", "-b:a", "192k",
-		"-movflags", "+faststart",
-		snippetPath,
-	)
+	var cmd *exec.Cmd
+	if mediaType == "video" {
+		cmd = exec.CommandContext(ctx, "ffmpeg", "-y",
+			"-ss", strconv.FormatFloat(startSec, 'f', 3, 64),
+			"-i", inputPath,
+			"-t", strconv.FormatFloat(duration, 'f', 3, 64),
+			"-c:v", "copy", "-c:a", "copy",
+			"-movflags", "+faststart",
+			snippetPath,
+		)
+	} else {
+		cmd = exec.CommandContext(ctx, "ffmpeg", "-y",
+			"-ss", strconv.FormatFloat(startSec, 'f', 3, 64),
+			"-i", inputPath,
+			"-t", strconv.FormatFloat(duration, 'f', 3, 64),
+			"-c:a", "aac", "-b:a", "192k",
+			"-movflags", "+faststart",
+			snippetPath,
+		)
+	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("extract segment: ffmpeg: %w (output: %s)", err, strings.TrimSpace(string(out)))
 	}
 
-	waveformPath := filepath.Join(outputDir, "waveform.json")
-	if err := runAudiowaveform(ctx, snippetPath, waveformPath); err != nil {
-		return fmt.Errorf("extract segment: waveform: %w", err)
+	if mediaType != "video" {
+		waveformPath := filepath.Join(outputDir, "waveform.json")
+		if err := runAudiowaveform(ctx, snippetPath, waveformPath); err != nil {
+			return fmt.Errorf("extract segment: waveform: %w", err)
+		}
 	}
 
 	return nil
