@@ -14,22 +14,22 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
 
+	"shakedown/internal/admin"
 	"shakedown/internal/auth"
 	"shakedown/internal/comments"
 	"shakedown/internal/config"
 	"shakedown/internal/database"
 	apimiddleware "shakedown/internal/middleware"
 	"shakedown/internal/recordings"
+	"shakedown/internal/shares"
 	"shakedown/internal/songs"
 	"shakedown/internal/static"
 	"shakedown/internal/tags"
-	"shakedown/internal/admin"
-	"shakedown/internal/shares"
 )
 
 var (
-    version = "dev"
-    commit  = "unknown"
+	version = "dev"
+	commit  = "unknown"
 )
 
 func main() {
@@ -94,8 +94,8 @@ func main() {
 		tagRepo := tags.NewRepository(db)
 		tagHandler = tags.NewHandler(tagRepo, logger)
 
-        shareRepo := shares.NewRepository(db)
-        shareHandler = shares.NewHandler(shareRepo, recRepo, store, logger)
+		shareRepo := shares.NewRepository(db)
+		shareHandler = shares.NewHandler(shareRepo, recRepo, store, logger)
 
 		adminHandler = admin.NewHandler(db, cfg.StorageRoot, logger)
 	}
@@ -195,8 +195,8 @@ func main() {
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-    _ = json.NewEncoder(w).Encode(map[string]string{
-        "status":  "ok",
-        "version": version,
-    })
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status":  "ok",
+		"version": version,
+	})
 }

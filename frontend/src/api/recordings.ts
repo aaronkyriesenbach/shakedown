@@ -11,6 +11,10 @@ export interface Recording {
   uploaded_by: string;
   recorded_at: string;
   recorded_at_source: string;
+  media_type: 'audio' | 'video';
+  thumbnail_ready: boolean;
+  video_width?: number;
+  video_height?: number;
   duration_seconds?: number;
   bitrate?: number;
   sample_rate?: number;
@@ -18,7 +22,7 @@ export interface Recording {
   playback_ready: boolean;
   waveform_ready: boolean;
   processing_error?: string;
-  processing_step: 'queued' | 'analyzing' | 'transcoding' | 'generating_waveform' | 'complete';
+  processing_step: 'queued' | 'analyzing' | 'transcoding' | 'extracting_thumbnail' | 'generating_waveform' | 'complete';
   created_at: string;
   updated_at: string;
   deleted_at?: string;
@@ -33,6 +37,7 @@ export interface CreateRecordingInput {
   uploaded_by: string;
   recorded_at: string;
   recorded_at_source: string;
+  media_type: 'audio' | 'video';
 }
 
 export interface UpdateRecordingInput {
@@ -140,4 +145,8 @@ export function waveformUrl(id: string): string {
 export function segmentUrl(id: string, start: number, duration: number): string {
   const end = start + duration;
   return `/api/recordings/${id}/segment?start=${start}&end=${end}`;
+}
+
+export function thumbnailUrl(id: string): string {
+  return `/api/recordings/${id}/thumbnail`;
 }

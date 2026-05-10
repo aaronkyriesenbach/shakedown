@@ -29,17 +29,17 @@ func (h *Handler) Routes(r chi.Router) {
 }
 
 type createSongRequest struct {
-	Title        string `json:"title"`
-	StartSeconds int    `json:"start_seconds"`
-	EndSeconds   *int   `json:"end_seconds"`
-	Notes        *string  `json:"notes"`
+	Title        string  `json:"title"`
+	StartSeconds int     `json:"start_seconds"`
+	EndSeconds   *int    `json:"end_seconds"`
+	Notes        *string `json:"notes"`
 }
 
 type updateSongRequest struct {
-	Title        string `json:"title"`
-	StartSeconds int    `json:"start_seconds"`
-	EndSeconds   *int   `json:"end_seconds"`
-	Notes        *string  `json:"notes"`
+	Title        string  `json:"title"`
+	StartSeconds int     `json:"start_seconds"`
+	EndSeconds   *int    `json:"end_seconds"`
+	Notes        *string `json:"notes"`
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {

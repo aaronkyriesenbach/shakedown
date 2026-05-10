@@ -1,7 +1,13 @@
 import { Loader2, AlertCircle, Check, Circle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export type ProcessingStep = 'queued' | 'analyzing' | 'transcoding' | 'generating_waveform' | 'complete';
+export type ProcessingStep =
+  | 'queued'
+  | 'analyzing'
+  | 'transcoding'
+  | 'extracting_thumbnail'
+  | 'generating_waveform'
+  | 'complete';
 
 export interface ProcessingStatusProps {
   processingStep: ProcessingStep;
@@ -12,6 +18,7 @@ export interface ProcessingStatusProps {
 const steps = [
   { id: 'analyzing', name: 'Analyzing audio', description: 'Reading file metadata and audio properties' },
   { id: 'transcoding', name: 'Transcoding', description: 'Converting to optimized playback format' },
+  { id: 'extracting_thumbnail', name: 'Extracting thumbnail', description: 'Extracting thumbnail from media' },
   { id: 'generating_waveform', name: 'Generating waveform', description: 'Creating visual waveform data' },
   { id: 'complete', name: 'Complete', description: 'Ready to play' },
 ];
@@ -21,7 +28,7 @@ export function ProcessingStatus({ processingStep, processingError, className }:
     return null;
   }
 
-  const stepOrder = ['queued', 'analyzing', 'transcoding', 'generating_waveform', 'complete'];
+  const stepOrder = ['queued', 'analyzing', 'transcoding', 'extracting_thumbnail', 'generating_waveform', 'complete'];
   const currentIndex = stepOrder.indexOf(processingStep);
 
   return (

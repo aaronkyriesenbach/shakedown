@@ -15,8 +15,8 @@ type Song struct {
 	ID           string    `json:"id"`
 	RecordingID  string    `json:"recording_id"`
 	Title        string    `json:"title"`
-	StartSeconds int   `json:"start_seconds"`
-	EndSeconds   *int  `json:"end_seconds,omitempty"`
+	StartSeconds int       `json:"start_seconds"`
+	EndSeconds   *int      `json:"end_seconds,omitempty"`
 	Notes        *string   `json:"notes,omitempty"`
 	CreatedBy    string    `json:"created_by"`
 	CreatedAt    time.Time `json:"created_at"`
