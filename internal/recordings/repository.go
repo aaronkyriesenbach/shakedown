@@ -30,6 +30,10 @@ type Recording struct {
 	WaveformReady    bool       `json:"waveform_ready"`
 	ProcessingError  *string    `json:"processing_error,omitempty"`
 	ProcessingStep   string     `json:"processing_step"`
+	MediaType        string     `json:"media_type"`
+	ThumbnailReady   bool       `json:"thumbnail_ready"`
+	VideoWidth       *int       `json:"video_width,omitempty"`
+	VideoHeight      *int       `json:"video_height,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 	DeletedAt        *time.Time `json:"deleted_at,omitempty"`
@@ -45,6 +49,7 @@ type CreateRecordingInput struct {
 	UploadedBy       string
 	RecordedAt       time.Time
 	RecordedAtSource string
+	MediaType        string
 }
 
 // Repository handles database operations for recordings.
