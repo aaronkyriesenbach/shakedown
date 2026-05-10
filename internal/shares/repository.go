@@ -1,8 +1,8 @@
 package shares
 
 import (
-	cryptoRand "crypto/rand"
 	"context"
+	cryptoRand "crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"time"
@@ -17,8 +17,8 @@ type Share struct {
 	Token        string     `json:"token"`
 	RecordingID  string     `json:"recording_id"`
 	SongID       *string    `json:"song_id,omitempty"`
-	StartSeconds *int      `json:"start_seconds,omitempty"`
-	EndSeconds   *int      `json:"end_seconds,omitempty"`
+	StartSeconds *int       `json:"start_seconds,omitempty"`
+	EndSeconds   *int       `json:"end_seconds,omitempty"`
 	Label        *string    `json:"label,omitempty"`
 	CreatedBy    string     `json:"created_by"`
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`

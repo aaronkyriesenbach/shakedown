@@ -25,12 +25,12 @@ type Config struct {
 	ProcessingMaxWorkers     int `envconfig:"PROCESSING_MAX_WORKERS" default:"4"`
 	ProcessingTimeoutSeconds int `envconfig:"PROCESSING_TIMEOUT_SECONDS" default:"300"`
 
-    UploadMaxSizeMB int64 `envconfig:"UPLOAD_MAX_SIZE_MB" default:"500"`
+	UploadMaxSizeMB int64 `envconfig:"UPLOAD_MAX_SIZE_MB" default:"500"`
 
-    // Video-specific configuration
-    VideoProcessingMaxWorkers     int   `envconfig:"VIDEO_PROCESSING_MAX_WORKERS" default:"2"`
-    VideoProcessingTimeoutSeconds int   `envconfig:"VIDEO_PROCESSING_TIMEOUT_SECONDS" default:"3600"`
-    VideoUploadMaxSizeMB          int64 `envconfig:"VIDEO_UPLOAD_MAX_SIZE_MB" default:"4096"`
+	// Video-specific configuration
+	VideoProcessingMaxWorkers     int   `envconfig:"VIDEO_PROCESSING_MAX_WORKERS" default:"2"`
+	VideoProcessingTimeoutSeconds int   `envconfig:"VIDEO_PROCESSING_TIMEOUT_SECONDS" default:"3600"`
+	VideoUploadMaxSizeMB          int64 `envconfig:"VIDEO_UPLOAD_MAX_SIZE_MB" default:"4096"`
 }
 
 func Load() (*Config, error) {

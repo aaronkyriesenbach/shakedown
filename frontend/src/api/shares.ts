@@ -63,3 +63,7 @@ export function shareWaveformUrl(token: string) {
 export function shareDownloadUrl(token: string) {
   return `${BASE_URL}/api/s/${token}/download`;
 }
+
+export function shareThumbnailUrl(token: string) {
+  return `${BASE_URL}/api/s/${token}/thumbnail`;
+}

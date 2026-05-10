@@ -13,9 +13,9 @@ import (
 
 // Recording represents a recording row from the database.
 type Recording struct {
-	ID            string     `json:"id"`
-	Title         string     `json:"title"`
-	FileExt       string     `json:"file_ext"`
+	ID               string     `json:"id"`
+	Title            string     `json:"title"`
+	FileExt          string     `json:"file_ext"`
 	FileSizeBytes    int64      `json:"file_size_bytes"`
 	MimeType         string     `json:"mime_type"`
 	StoragePath      string     `json:"storage_path"`
@@ -37,8 +37,8 @@ type Recording struct {
 
 // CreateRecordingInput holds the data needed to create a recording.
 type CreateRecordingInput struct {
-	Title     string
-	FileExt   string
+	Title            string
+	FileExt          string
 	FileSizeBytes    int64
 	MimeType         string
 	StoragePath      string

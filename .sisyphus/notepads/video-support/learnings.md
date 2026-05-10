@@ -47,3 +47,12 @@
 - `playback.m4a` is hardcoded in `processing.go:112` and share/stream handlers
 - Single semaphore in service.go — needs to become two (audio + video)
 - Upload limit: 500MB (config.UploadMaxSizeMB) — video needs 4GB
+
+### Changes made (2026-05-10)
+
+- Added MediaType, ThumbnailReady, VideoWidth, VideoHeight to Recording struct in repository.go.
+- Added MediaType to CreateRecordingInput in repository.go.
+- Added MediaType to ProcessingJob and extended ffprobeResult streams with Width, Height, CodecName in processing.go.
+- Added PlaybackFilename and SnippetFilename helpers in processing.go.
+
+These changes compile; go build ./internal/recordings/... passed locally.
