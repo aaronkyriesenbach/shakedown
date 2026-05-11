@@ -33,6 +33,13 @@ var (
 )
 
 func main() {
+	// Handle healthcheck subcommand (used by Docker HEALTHCHECK).
+	// Runs before any heavy initialization to keep it fast.
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		runHealthcheck()
+		return
+	}
+
 	logger, err := zap.NewProduction()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
@@ -206,4 +213,22 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 		"status":  "ok",
 		"version": version,
 	})
+}
+
+func runHealthcheck() {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("http://localhost:" + port + "/api/health")
+	if err != nil {
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		os.Exit(1)
+	}
 }
