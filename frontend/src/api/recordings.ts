@@ -1,6 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/api/client';
 
+export type ProcessingStep =
+  | 'queued'
+  | 'analyzing'
+  | 'transcoding'
+  | 'extracting_thumbnail'
+  | 'extracting_audio'
+  | 'generating_waveform'
+  | 'complete';
+
 export interface Recording {
   id: string;
   title: string;
@@ -13,6 +22,7 @@ export interface Recording {
   recorded_at_source: string;
   media_type: 'audio' | 'video';
   thumbnail_ready: boolean;
+  audio_extract_ready: boolean;
   video_width?: number;
   video_height?: number;
   duration_seconds?: number;
@@ -22,7 +32,7 @@ export interface Recording {
   playback_ready: boolean;
   waveform_ready: boolean;
   processing_error?: string;
-  processing_step: 'queued' | 'analyzing' | 'transcoding' | 'extracting_thumbnail' | 'generating_waveform' | 'complete';
+  processing_step: ProcessingStep;
   created_at: string;
   updated_at: string;
   deleted_at?: string;
@@ -149,4 +159,8 @@ export function segmentUrl(id: string, start: number, duration: number): string 
 
 export function thumbnailUrl(id: string): string {
   return `/api/recordings/${id}/thumbnail`;
+}
+
+export function audioStreamUrl(id: string): string {
+  return `/api/recordings/${id}/audio-stream`;
 }

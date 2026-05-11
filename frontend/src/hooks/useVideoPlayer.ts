@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, type RefObject } from 'react';
 
 export interface UseVideoPlayerProps {
   videoRef: RefObject<HTMLVideoElement | null>;
+  initialTime?: number;
+  autoPlay?: boolean;
   onTimeUpdate?: (time: number) => void;
   onSeek?: (time: number) => void;
 }
@@ -18,7 +20,7 @@ export interface UseVideoPlayerReturn {
   setVolume: (v: number) => void;
 }
 
-export function useVideoPlayer({ videoRef, onTimeUpdate, onSeek }: UseVideoPlayerProps): UseVideoPlayerReturn {
+export function useVideoPlayer({ videoRef, initialTime, autoPlay, onTimeUpdate, onSeek }: UseVideoPlayerProps): UseVideoPlayerReturn {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -63,6 +65,12 @@ export function useVideoPlayer({ videoRef, onTimeUpdate, onSeek }: UseVideoPlaye
     const handleLoadedMetadata = () => {
       setDuration(video.duration);
       setIsReady(true);
+      if (initialTime && initialTime > 0) {
+        video.currentTime = Math.min(initialTime, video.duration);
+      }
+      if (autoPlay) {
+        void video.play();
+      }
     };
     const handleTimeUpdate = () => {
       setCurrentTime(video.currentTime);

@@ -4,6 +4,7 @@ import { ChevronLeft, Edit2, Trash2, Download, Share2, Tag as TagIcon } from 'lu
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -14,7 +15,7 @@ import { VideoPlayer, type VideoPlayerRef } from '@/components/video/VideoPlayer
 import { RecordingEditDialog } from './RecordingEditDialog';
 import { SongMarkerList } from '@/components/songs/SongMarkerList';
 import { ShareDialog } from '@/components/shares/ShareDialog';
-import { downloadUrl, segmentUrl, useDeleteRecording, type Recording } from '@/api/recordings';
+import { downloadUrl, segmentUrl, useDeleteRecording, audioStreamUrl, type Recording } from '@/api/recordings';
 import { useSongs } from '@/api/songs';
 import { useComments } from '@/api/comments';
 import { useMe } from '@/api/auth';
@@ -36,6 +37,9 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
   const videoRef = useRef<VideoPlayerRef>(null);
   
   const [currentTime, setCurrentTime] = useState(0);
+  const [showVideo, setShowVideo] = useState(true);
+  const [transferTime, setTransferTime] = useState<number | undefined>(undefined);
+  const [transferPlaying, setTransferPlaying] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
@@ -70,6 +74,25 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
     window.open(segmentUrl(recording.id, start, duration), '_blank');
   };
 
+  const handleVideoToggle = (checked: boolean | 'indeterminate') => {
+    if (showVideo) {
+      // Switching from video to audio-only
+      const time = videoRef.current?.getCurrentTime() ?? 0;
+      const playing = videoRef.current?.getIsPlaying() ?? false;
+      videoRef.current?.stop();
+      setTransferTime(time);
+      setTransferPlaying(playing);
+    } else {
+      // Switching from audio-only to video
+      const time = waveformRef.current?.getCurrentTime() ?? 0;
+      const playing = waveformRef.current?.getIsPlaying() ?? false;
+      waveformRef.current?.stop();
+      setTransferTime(time);
+      setTransferPlaying(playing);
+    }
+    setShowVideo(checked === true);
+  };
+
   const handleSeek = (seconds: number) => {
     if (recording.media_type === 'video') {
       videoRef.current?.seekTo(seconds);
@@ -102,20 +125,35 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
       </div>
 
       <div className="w-full">
-        {recording.media_type === 'video' ? (
+        {recording.media_type === 'video' && (
+          <div className="flex items-center gap-2 mb-3">
+            <Checkbox
+              id="show-video"
+              checked={showVideo}
+              onCheckedChange={handleVideoToggle}
+            />
+            <Label htmlFor="show-video" className="text-sm cursor-pointer">Show video</Label>
+          </div>
+        )}
+        {recording.media_type === 'video' && showVideo ? (
           <VideoPlayer
             ref={videoRef}
             recording={recording}
+            initialTime={transferTime}
+            autoPlay={transferPlaying}
             onTimeUpdate={setCurrentTime}
             onSeek={handleSeek}
             songs={songs ?? []}
             onMarkerClick={handleSeek}
           />
         ) : (
-          <WaveformPlayer 
-            ref={waveformRef} 
-            recording={recording} 
-            onTimeUpdate={setCurrentTime} 
+          <WaveformPlayer
+            ref={waveformRef}
+            recording={recording}
+            audioUrlOverride={recording.media_type === 'video' ? audioStreamUrl(recording.id) : undefined}
+            initialTime={transferTime}
+            autoPlay={transferPlaying}
+            onTimeUpdate={setCurrentTime}
           />
         )}
       </div>

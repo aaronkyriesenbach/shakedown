@@ -94,6 +94,23 @@ func runFFmpegVideo(ctx context.Context, inputPath, outputPath string, sourceHei
 	return nil
 }
 
+func extractAudioFromVideo(ctx context.Context, inputPath, outputPath string) error {
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-i", inputPath,
+		"-vn",
+		"-c:a", "aac",
+		"-b:a", "192k",
+		"-movflags", "+faststart",
+		"-y",
+		outputPath,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ffmpeg audio extract: failed: %w (output: %s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // extractThumbnail extracts a representative JPEG frame from a video.
 func extractThumbnail(ctx context.Context, inputPath, outputPath string, durationSeconds float64) error {
 	seek := durationSeconds * 0.1
@@ -165,6 +182,11 @@ func PlaybackFilename(mediaType string) string {
 	return "playback.m4a"
 }
 
+// AudioExtractFilename returns the audio-only extract filename for video recordings.
+func AudioExtractFilename() string {
+	return "audio.m4a"
+}
+
 // SnippetFilename returns the snippet file name for the given media type.
 func SnippetFilename(mediaType string) string {
 	if mediaType == "video" {
@@ -210,7 +232,7 @@ func (svc *Service) processAudioRecording(ctx context.Context, job ProcessingJob
 		errStr := err.Error()
 		procErr = &errStr
 		_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-			0, 0, 0, 0, false, false, procErr, false, nil, nil)
+			0, 0, 0, 0, false, false, procErr, false, false, nil, nil)
 		return
 	}
 
@@ -236,7 +258,7 @@ func (svc *Service) processAudioRecording(ctx context.Context, job ProcessingJob
 		errStr := err.Error()
 		procErr = &errStr
 		_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-			durationSeconds, bitrate, sampleRate, channels, false, false, procErr, false, nil, nil)
+			durationSeconds, bitrate, sampleRate, channels, false, false, procErr, false, false, nil, nil)
 		return
 	}
 	playbackReady = true
@@ -252,23 +274,27 @@ func (svc *Service) processAudioRecording(ctx context.Context, job ProcessingJob
 	}
 
 	_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-		durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, procErr, false, nil, nil)
+		durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, procErr, false, false, nil, nil)
 }
 
 func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob, recordingDir, originalPath string) {
 	playbackPath := filepath.Join(recordingDir, PlaybackFilename("video"))
 	thumbnailPath := filepath.Join(recordingDir, "thumbnail.jpg")
+	audioExtractPath := filepath.Join(recordingDir, AudioExtractFilename())
+	waveformPath := filepath.Join(recordingDir, "waveform.json")
 
 	var (
-		durationSeconds float64
-		bitrate         int
-		sampleRate      int
-		channels        int
-		videoWidth      int
-		videoHeight     int
-		playbackReady   bool
-		thumbnailReady  bool
-		procErr         *string
+		durationSeconds   float64
+		bitrate           int
+		sampleRate        int
+		channels          int
+		videoWidth        int
+		videoHeight       int
+		playbackReady     bool
+		thumbnailReady    bool
+		audioExtractReady bool
+		waveformReady     bool
+		procErr           *string
 	)
 
 	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "analyzing")
@@ -278,7 +304,7 @@ func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob
 		errStr := err.Error()
 		procErr = &errStr
 		_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-			0, 0, 0, 0, false, false, procErr, false, nil, nil)
+			0, 0, 0, 0, false, false, procErr, false, false, nil, nil)
 		return
 	}
 
@@ -307,7 +333,7 @@ func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob
 		errStr := err.Error()
 		procErr = &errStr
 		_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-			durationSeconds, bitrate, sampleRate, channels, false, false, procErr, false, nil, nil)
+			durationSeconds, bitrate, sampleRate, channels, false, false, procErr, false, false, nil, nil)
 		return
 	}
 	playbackReady = true
@@ -322,10 +348,30 @@ func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob
 		procErr = nil
 	}
 
+	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "extracting_audio")
+
+	if err := extractAudioFromVideo(ctx, playbackPath, audioExtractPath); err != nil {
+		errStr := fmt.Sprintf("audio extraction failed: %v", err)
+		procErr = &errStr
+	} else {
+		audioExtractReady = true
+		procErr = nil
+	}
+
+	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "generating_waveform")
+
+	if err := runAudiowaveform(ctx, audioExtractPath, waveformPath); err != nil {
+		errStr := fmt.Sprintf("waveform generation failed: %v", err)
+		procErr = &errStr
+	} else {
+		waveformReady = true
+		procErr = nil
+	}
+
 	vw := videoWidth
 	vh := videoHeight
 	_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-		durationSeconds, bitrate, sampleRate, channels, playbackReady, false, procErr, thumbnailReady, &vw, &vh)
+		durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, procErr, thumbnailReady, audioExtractReady, &vw, &vh)
 }
 
 // parseDateFromTags tries to extract recorded_at from ffprobe tags.

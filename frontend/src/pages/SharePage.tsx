@@ -1,17 +1,25 @@
+import { useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Download, Loader2, Calendar, Clock, Music } from 'lucide-react';
-import { useShare, shareStreamUrl, shareWaveformUrl, shareDownloadUrl } from '@/api/shares';
-import { WaveformPlayer } from '@/components/audio/WaveformPlayer';
-import { VideoPlayer } from '@/components/video/VideoPlayer';
+import { useShare, shareStreamUrl, shareAudioStreamUrl, shareWaveformUrl, shareDownloadUrl } from '@/api/shares';
+import { WaveformPlayer, type WaveformPlayerRef } from '@/components/audio/WaveformPlayer';
+import { VideoPlayer, type VideoPlayerRef } from '@/components/video/VideoPlayer';
 import { formatDuration, formatDate } from '@/lib/format';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { useTheme } from '@/hooks/useTheme';
 
 export default function SharePage() {
   const { token } = useParams<{ token: string }>();
   const { data: share, isLoading, error } = useShare(token ?? '');
+  const waveformRef = useRef<WaveformPlayerRef>(null);
+  const videoRef = useRef<VideoPlayerRef>(null);
+  const [showVideo, setShowVideo] = useState(true);
+  const [transferTime, setTransferTime] = useState<number | undefined>(undefined);
+  const [transferPlaying, setTransferPlaying] = useState(false);
   useTheme();
 
   if (isLoading) {
@@ -38,6 +46,23 @@ export default function SharePage() {
 
   const recording = share.recording;
   const hasSnippet = share.start_seconds !== undefined && share.end_seconds !== undefined;
+
+  const handleVideoToggle = (checked: boolean | 'indeterminate') => {
+    if (showVideo) {
+      const time = videoRef.current?.getCurrentTime() ?? 0;
+      const playing = videoRef.current?.getIsPlaying() ?? false;
+      videoRef.current?.stop();
+      setTransferTime(time);
+      setTransferPlaying(playing);
+    } else {
+      const time = waveformRef.current?.getCurrentTime() ?? 0;
+      const playing = waveformRef.current?.getIsPlaying() ?? false;
+      waveformRef.current?.stop();
+      setTransferTime(time);
+      setTransferPlaying(playing);
+    }
+    setShowVideo(checked === true);
+  };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -85,20 +110,38 @@ export default function SharePage() {
 
         {recording ? (
           <Card className="p-6">
-            {recording.media_type === 'video' ? (
+            {recording.media_type === 'video' && (
+              <div className="flex items-center gap-2 mb-3">
+                <Checkbox
+                  id="share-show-video"
+                  checked={showVideo}
+                  onCheckedChange={handleVideoToggle}
+                />
+                <Label htmlFor="share-show-video" className="text-sm cursor-pointer">Show video</Label>
+              </div>
+            )}
+            {recording.media_type === 'video' && showVideo ? (
               <VideoPlayer
+                ref={videoRef}
                 recording={hasSnippet
                   ? { ...recording, duration_seconds: (share.end_seconds ?? 0) - (share.start_seconds ?? 0) }
                   : recording}
                 streamUrlOverride={shareStreamUrl(share.token)}
+                initialTime={transferTime}
+                autoPlay={transferPlaying}
               />
             ) : (
-              <WaveformPlayer 
+              <WaveformPlayer
+                ref={waveformRef}
                 recording={hasSnippet
                   ? { ...recording, duration_seconds: (share.end_seconds ?? 0) - (share.start_seconds ?? 0) }
                   : recording}
-                audioUrlOverride={shareStreamUrl(share.token)}
+                audioUrlOverride={recording.media_type === 'video'
+                  ? shareAudioStreamUrl(share.token)
+                  : shareStreamUrl(share.token)}
                 peaksUrlOverride={shareWaveformUrl(share.token)}
+                initialTime={transferTime}
+                autoPlay={transferPlaying}
               />
             )}
           </Card>

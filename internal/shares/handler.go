@@ -149,6 +149,59 @@ func (h *Handler) StreamShare(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, recordings.PlaybackFilename(rec.MediaType), rec.UpdatedAt, f)
 }
 
+func (h *Handler) AudioStreamShare(w http.ResponseWriter, r *http.Request) {
+	share := ShareFromContext(r.Context())
+	if share == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	rec, err := h.recRepo.GetByID(r.Context(), share.RecordingID)
+	if err != nil || rec == nil {
+		http.Error(w, `{"error":"not available"}`, http.StatusNotFound)
+		return
+	}
+
+	if rec.MediaType != "video" {
+		h.StreamShare(w, r)
+		return
+	}
+
+	if !rec.AudioExtractReady {
+		http.Error(w, `{"error":"audio not ready"}`, http.StatusAccepted)
+		return
+	}
+
+	if share.StartSeconds != nil && share.EndSeconds != nil {
+		f, _, err := h.storage.Read(r.Context(), filepath.Join("shares", share.ID, recordings.SnippetFilename("audio")))
+		if err != nil || f == nil {
+			f2, _, err2 := h.storage.Read(r.Context(), filepath.Join(rec.ID, recordings.AudioExtractFilename()))
+			if err2 != nil || f2 == nil {
+				http.Error(w, `{"error":"audio not found"}`, http.StatusNotFound)
+				return
+			}
+			defer f2.Close()
+			w.Header().Set("Content-Type", "audio/mp4")
+			http.ServeContent(w, r, recordings.AudioExtractFilename(), rec.UpdatedAt, f2)
+			return
+		}
+		defer f.Close()
+		w.Header().Set("Content-Type", "audio/mp4")
+		http.ServeContent(w, r, recordings.SnippetFilename("audio"), rec.UpdatedAt, f)
+		return
+	}
+
+	f, _, err := h.storage.Read(r.Context(), filepath.Join(rec.ID, recordings.AudioExtractFilename()))
+	if err != nil || f == nil {
+		http.Error(w, `{"error":"audio not found"}`, http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+
+	w.Header().Set("Content-Type", "audio/mp4")
+	http.ServeContent(w, r, recordings.AudioExtractFilename(), rec.UpdatedAt, f)
+}
+
 func (h *Handler) WaveformShare(w http.ResponseWriter, r *http.Request) {
 	share := ShareFromContext(r.Context())
 	if share == nil {
