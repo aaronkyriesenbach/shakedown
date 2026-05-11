@@ -7,7 +7,6 @@ import { toast } from 'sonner';
 import { Upload, X, Music, Loader2, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
-import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { formatFileSize } from '@/lib/format';
@@ -41,10 +40,7 @@ interface ProbeResult {
 
 export function UploadForm() {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [recordedAt, setRecordedAt] = useState<string>(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  });
+  const [fileDates, setFileDates] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<UppyFile<UploadMeta, RecordingBody>[]>([]);
   const [fileTitles, setFileTitles] = useState<Record<string, string>>({});
   const [isDragging, setIsDragging] = useState(false);
@@ -116,10 +112,6 @@ export function UploadForm() {
     };
   }, [uppy, syncFiles]);
 
-  useEffect(() => {
-    uppy.setMeta({ recorded_at: recordedAt });
-  }, [uppy, recordedAt]);
-
   const probeFile = useCallback(async (file: UppyFile<UploadMeta, RecordingBody>, fallbackDate: string, offset: number) => {
     setProbingFiles(prev => {
       const next = new Set(prev);
@@ -146,6 +138,14 @@ export function UploadForm() {
       const result: ProbeResult = await res.json();
       setProbeResults(prev => ({ ...prev, [file.id]: result }));
 
+      setFileDates(prev => {
+        if (prev[file.id] === undefined) {
+          uppy.setFileMeta(file.id, { recorded_at: result.recorded_at });
+          return { ...prev, [file.id]: result.recorded_at };
+        }
+        return prev;
+      });
+
       setFileTitles(prev => {
         if (prev[file.id] === undefined || prev[file.id] === '') {
           uppy.setFileMeta(file.id, { title: result.title_preview });
@@ -166,14 +166,15 @@ export function UploadForm() {
 
   useEffect(() => {
     let offset = 0;
+    const today = new Date().toISOString().split('T')[0];
     for (const file of files) {
       if (!probedFilesRef.current.has(file.id)) {
         probedFilesRef.current.add(file.id);
-        probeFile(file, recordedAt, offset);
+        probeFile(file, today, offset);
         offset++;
       }
     }
-  }, [files, recordedAt, probeFile]);
+  }, [files, probeFile]);
 
   const polledRef = useRef(polledRecordings);
   polledRef.current = polledRecordings;
@@ -256,6 +257,7 @@ export function UploadForm() {
     setUploadResults(null);
     setPolledRecordings({});
     setFileTitles({});
+    setFileDates({});
     setProbeResults({});
     setProbingFiles(new Set());
     probedFilesRef.current.clear();
@@ -344,17 +346,6 @@ export function UploadForm() {
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <div className="grid gap-2">
-          <Label htmlFor="date">Recording Date</Label>
-          <Input
-            id="date"
-            type="date"
-            value={recordedAt}
-            onChange={(e) => setRecordedAt(e.target.value)}
-            disabled={isUploading}
-          />
-        </div>
-
         <div
           className={`
             border-2 border-dashed rounded-xl p-8 text-center transition-colors
@@ -414,6 +405,7 @@ export function UploadForm() {
                 onClick={() => {
                   uppy.cancelAll();
                   setFileTitles({});
+                  setFileDates({});
                   setProbeResults({});
                   setProbingFiles(new Set());
                   probedFilesRef.current.clear();
@@ -474,6 +466,39 @@ export function UploadForm() {
                         </span>
                       )}
                     </div>
+                    {!isUploading && !isProbing && (
+                      <div className="flex items-center gap-2 mt-1">
+                        <Input
+                          type="date"
+                          value={fileDates[file.id] || ''}
+                          onChange={(e) => {
+                            const newDate = e.target.value;
+                            setFileDates(prev => ({ ...prev, [file.id]: newDate }));
+                            uppy.setFileMeta(file.id, { recorded_at: newDate });
+                            probedFilesRef.current.delete(file.id);
+                            
+                            setProbeResults(prev => {
+                              const next = { ...prev };
+                              delete next[file.id];
+                              return next;
+                            });
+                            setFileTitles(prev => {
+                              const next = { ...prev };
+                              delete next[file.id];
+                              return next;
+                            });
+                            
+                            probeFile(file, newDate, 0);
+                          }}
+                          className="h-7 w-auto text-xs border-transparent hover:border-input focus:border-input px-1 -ml-1 bg-transparent"
+                        />
+                        {probe?.date_source === 'embedded_tags' && (
+                          <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md">
+                            from metadata
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {!isUploading && (
@@ -484,6 +509,11 @@ export function UploadForm() {
                       onClick={() => {
                         uppy.removeFile(file.id);
                         setFileTitles(prev => {
+                          const next = { ...prev };
+                          delete next[file.id];
+                          return next;
+                        });
+                        setFileDates(prev => {
                           const next = { ...prev };
                           delete next[file.id];
                           return next;
