@@ -6,7 +6,7 @@ export default function UploadPage() {
       <div className="mb-6 md:mb-8">
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Upload Recording</h1>
         <p className="text-muted-foreground mt-2 text-sm md:text-base">
-          Upload audio files to your library. Supported formats include MP3, WAV, and more.
+          Upload audio or video files to your library. Supported formats include MP3, WAV, MP4, and more.
         </p>
       </div>
 
