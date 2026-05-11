@@ -2,14 +2,20 @@ package recordings
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ErrDuplicateTitle is returned when a recording title conflicts with an
+// existing recording on the same date.
+var ErrDuplicateTitle = errors.New("recordings: duplicate title for date")
 
 // Recording represents a recording row from the database.
 type Recording struct {
@@ -94,6 +100,9 @@ func (repo *Repository) Create(ctx context.Context, input CreateRecordingInput) 
 		&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
 	)
 	if err != nil {
+		if isDuplicateTitleErr(err) {
+			return nil, ErrDuplicateTitle
+		}
 		return nil, fmt.Errorf("recordings: failed to create: %w", err)
 	}
 	return &rec, nil
@@ -104,7 +113,7 @@ func (repo *Repository) Create(ctx context.Context, input CreateRecordingInput) 
 // number assigned during upload may differ under concurrent writes.
 func (repo *Repository) NextTitleNumber(ctx context.Context, date time.Time) (int, error) {
 	var count int
-	if err := repo.db.QueryRow(ctx, "SELECT COUNT(*) FROM recordings WHERE deleted_at IS NULL AND recorded_at::date = $1::date", date).Scan(&count); err != nil {
+	if err := repo.db.QueryRow(ctx, "SELECT COUNT(*) FROM recordings WHERE deleted_at IS NULL AND CAST(recorded_at AT TIME ZONE 'UTC' AS date) = $1::date", date).Scan(&count); err != nil {
 		return 0, fmt.Errorf("recordings: count for next title number: %w", err)
 	}
 	return count + 1, nil
@@ -125,7 +134,7 @@ func (repo *Repository) createWithAutoTitle(ctx context.Context, id string, inpu
 	}
 
 	var count int
-	if err := tx.QueryRow(ctx, "SELECT COUNT(*) FROM recordings WHERE deleted_at IS NULL AND recorded_at::date = $1::date", input.RecordedAt).Scan(&count); err != nil {
+	if err := tx.QueryRow(ctx, "SELECT COUNT(*) FROM recordings WHERE deleted_at IS NULL AND CAST(recorded_at AT TIME ZONE 'UTC' AS date) = $1::date", input.RecordedAt).Scan(&count); err != nil {
 		return nil, fmt.Errorf("recordings: count for auto-title: %w", err)
 	}
 
@@ -153,6 +162,9 @@ func (repo *Repository) createWithAutoTitle(ctx context.Context, id string, inpu
 		&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
 	)
 	if err != nil {
+		if isDuplicateTitleErr(err) {
+			return nil, ErrDuplicateTitle
+		}
 		return nil, fmt.Errorf("recordings: failed to create: %w", err)
 	}
 
@@ -424,9 +436,17 @@ func (repo *Repository) Update(ctx context.Context, id string, title *string, re
 		&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
 	)
 	if err != nil {
+		if isDuplicateTitleErr(err) {
+			return nil, ErrDuplicateTitle
+		}
 		return nil, fmt.Errorf("recordings: failed to update: %w", err)
 	}
 	return &rec, nil
+}
+
+func isDuplicateTitleErr(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "uq_recordings_date_title"
 }
 
 func (repo *Repository) CountAll(ctx context.Context) (int, error) {

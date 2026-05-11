@@ -2,6 +2,7 @@ package recordings
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -143,6 +144,10 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 		RecordedAtSource: recordedAtSource,
 	})
 	if err != nil {
+		if errors.Is(err, ErrDuplicateTitle) {
+			http.Error(w, `{"error":"a recording with this title already exists for this date"}`, http.StatusConflict)
+			return
+		}
 		h.logger.Error("failed to create recording record", zap.Error(err))
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
@@ -246,6 +251,12 @@ func (h *Handler) probe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if o := r.FormValue("offset"); o != "" {
+		if n, err := strconv.Atoi(o); err == nil && n > 0 {
+			nextNum += n
+		}
+	}
+
 	titlePreview := fmt.Sprintf("Recording #%d %s", nextNum, recordedAt.Format("2006-01-02"))
 
 	w.Header().Set("Content-Type", "application/json")
@@ -337,6 +348,10 @@ func (h *Handler) updateRecording(w http.ResponseWriter, r *http.Request) {
 
 	rec, err := h.svc.repo.Update(r.Context(), id, req.Title, recordedAt)
 	if err != nil {
+		if errors.Is(err, ErrDuplicateTitle) {
+			http.Error(w, `{"error":"a recording with this title already exists for this date"}`, http.StatusConflict)
+			return
+		}
 		h.logger.Error("failed to update recording", zap.Error(err))
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return

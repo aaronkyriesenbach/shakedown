@@ -14,7 +14,6 @@ CREATE TABLE users (
 CREATE TABLE recordings (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title               TEXT NOT NULL,
-  original_filename   TEXT NOT NULL,
   file_ext            TEXT NOT NULL,
   file_size_bytes     BIGINT NOT NULL,
   mime_type           TEXT NOT NULL,
@@ -29,6 +28,11 @@ CREATE TABLE recordings (
   playback_ready      BOOLEAN NOT NULL DEFAULT false,
   waveform_ready      BOOLEAN NOT NULL DEFAULT false,
   processing_error    TEXT,
+  processing_step     TEXT NOT NULL DEFAULT 'queued' CHECK (processing_step IN ('queued','analyzing','transcoding','extracting_thumbnail','generating_waveform','complete')),
+  media_type          TEXT NOT NULL DEFAULT 'audio' CHECK (media_type IN ('audio','video')),
+  thumbnail_ready     BOOLEAN NOT NULL DEFAULT false,
+  video_width         INTEGER,
+  video_height        INTEGER,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   deleted_at          TIMESTAMPTZ
@@ -36,6 +40,7 @@ CREATE TABLE recordings (
 CREATE INDEX idx_recordings_uploaded_by ON recordings(uploaded_by);
 CREATE INDEX idx_recordings_recorded_at ON recordings(recorded_at DESC);
 CREATE INDEX idx_recordings_deleted_at ON recordings(deleted_at) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_recordings_date_title ON recordings ((CAST(recorded_at AT TIME ZONE 'UTC' AS date)), title) WHERE deleted_at IS NULL;
 ALTER TABLE recordings ADD COLUMN search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', title)) STORED;
 CREATE INDEX idx_recordings_search ON recordings USING GIN(search_vector);
 
