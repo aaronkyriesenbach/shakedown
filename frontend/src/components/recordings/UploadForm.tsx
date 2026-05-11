@@ -120,7 +120,7 @@ export function UploadForm() {
     uppy.setMeta({ recorded_at: recordedAt });
   }, [uppy, recordedAt]);
 
-  const probeFile = useCallback(async (file: UppyFile<UploadMeta, RecordingBody>, fallbackDate: string) => {
+  const probeFile = useCallback(async (file: UppyFile<UploadMeta, RecordingBody>, fallbackDate: string, offset: number) => {
     setProbingFiles(prev => {
       const next = new Set(prev);
       next.add(file.id);
@@ -131,6 +131,9 @@ export function UploadForm() {
       const formData = new FormData();
       formData.append('file', file.data as Blob, file.name);
       formData.append('fallback_date', fallbackDate);
+      if (offset > 0) {
+        formData.append('offset', String(offset));
+      }
 
       const res = await fetch('/api/recordings/probe', {
         method: 'POST',
@@ -162,10 +165,12 @@ export function UploadForm() {
   }, [uppy]);
 
   useEffect(() => {
+    let offset = 0;
     for (const file of files) {
       if (!probedFilesRef.current.has(file.id)) {
         probedFilesRef.current.add(file.id);
-        probeFile(file, recordedAt);
+        probeFile(file, recordedAt, offset);
+        offset++;
       }
     }
   }, [files, recordedAt, probeFile]);
