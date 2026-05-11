@@ -107,23 +107,23 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
 
   return (
     <div className="container max-w-5xl mx-auto py-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" asChild>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-4 min-w-0">
+          <Button variant="ghost" size="icon" asChild className="shrink-0">
             <Link to="/">
               <ChevronLeft className="w-5 h-5" />
             </Link>
           </Button>
-          <h1 className="text-2xl font-bold">{recording.title}</h1>
+          <h1 className="text-2xl font-bold truncate">{recording.title}</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setIsEditDialogOpen(true)}>
-            <Edit2 className="w-4 h-4 mr-2" />
-            Edit
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" size="icon" className="sm:w-auto sm:px-3" onClick={() => setIsEditDialogOpen(true)}>
+            <Edit2 className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">Edit</span>
           </Button>
-          <Button variant="destructive" size="sm" onClick={() => setIsDeleteDialogOpen(true)}>
-            <Trash2 className="w-4 h-4 mr-2" />
-            Delete
+          <Button variant="destructive" size="icon" className="sm:w-auto sm:px-3" onClick={() => setIsDeleteDialogOpen(true)}>
+            <Trash2 className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">Delete</span>
           </Button>
         </div>
       </div>
@@ -155,6 +155,34 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
             onShowVideoChange={recording.media_type === 'video' ? (show) => handleVideoToggle(show) : undefined}
           />
         )}
+      </div>
+
+      <div className="mt-8 pt-4">
+        <Tabs defaultValue="songs" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 md:w-[400px]">
+            <TabsTrigger value="songs">Songs</TabsTrigger>
+            <TabsTrigger value="comments">Comments ({comments.length})</TabsTrigger>
+          </TabsList>
+          <TabsContent value="songs" className="p-0 border rounded-md mt-4 bg-card min-h-[200px]">
+            <div className="p-6">
+              <SongMarkerList recordingId={recording.id} onSeek={handleSeek} currentTime={currentTime} />
+            </div>
+          </TabsContent>
+        <TabsContent value="comments" className="mt-4 space-y-6">
+          <Card className="p-4 bg-neutral-900/30 border-neutral-800">
+            <CommentForm recordingId={recording.id} currentTime={currentTime} />
+          </Card>
+          <Card className="p-6 bg-neutral-900/30 border-neutral-800">
+            <CommentThread 
+              comments={comments} 
+              recordingId={recording.id}
+              currentUserId={currentUser?.id}
+              onSeek={handleSeek}
+              isLoading={isLoadingComments}
+            />
+          </Card>
+        </TabsContent>
+        </Tabs>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -290,34 +318,6 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
             </div>
           </Card>
         </div>
-      </div>
-
-      <div className="mt-8 pt-4">
-        <Tabs defaultValue="songs" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 md:w-[400px]">
-            <TabsTrigger value="songs">Songs</TabsTrigger>
-            <TabsTrigger value="comments">Comments</TabsTrigger>
-          </TabsList>
-          <TabsContent value="songs" className="p-0 border rounded-md mt-4 bg-card min-h-[200px]">
-            <div className="p-6">
-              <SongMarkerList recordingId={recording.id} onSeek={handleSeek} currentTime={currentTime} />
-            </div>
-          </TabsContent>
-        <TabsContent value="comments" className="mt-4 space-y-6">
-          <Card className="p-4 bg-neutral-900/30 border-neutral-800">
-            <CommentForm recordingId={recording.id} currentTime={currentTime} />
-          </Card>
-          <Card className="p-6 bg-neutral-900/30 border-neutral-800">
-            <CommentThread 
-              comments={comments} 
-              recordingId={recording.id}
-              currentUserId={currentUser?.id}
-              onSeek={handleSeek}
-              isLoading={isLoadingComments}
-            />
-          </Card>
-        </TabsContent>
-        </Tabs>
       </div>
 
       <RecordingEditDialog 

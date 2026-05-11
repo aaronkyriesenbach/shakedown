@@ -67,7 +67,7 @@ export function PlayerControls({
         </div>
       )}
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4">
         <Button
           variant="ghost"
           size="icon"
@@ -106,7 +106,7 @@ export function PlayerControls({
             value={volume}
             onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
             disabled={!isReady}
-            className="w-24 accent-primary"
+            className="w-16 sm:w-24 accent-primary"
             aria-label="Volume"
           />
           {onFullscreen && (

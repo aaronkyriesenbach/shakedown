@@ -22,7 +22,7 @@ export function CommentForm({
   placeholder = 'Add a comment...',
 }: CommentFormProps) {
   const [content, setContent] = useState('');
-  const [useTimestamp, setUseTimestamp] = useState(currentTime > 0 && !parentId);
+  const [useTimestamp, setUseTimestamp] = useState(false);
 
   const { mutate: createComment, isPending } = useCreateComment(recordingId);
 
@@ -60,7 +60,7 @@ export function CommentForm({
           onChange={(e) => setContent(e.target.value)}
           disabled={isPending}
         />
-        {!parentId && currentTime > 0 && (
+        {!parentId && (
           <div className="absolute bottom-3 left-3 flex items-center gap-2">
             <button
               type="button"
