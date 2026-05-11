@@ -92,7 +92,7 @@ export function useAudioPlayer({
       url: audioUrl,
       peaks: peaks,
       duration: initialDuration,
-      backend: 'WebAudio',
+      backend: 'MediaElement',
       dragToSeek: true,
     });
 

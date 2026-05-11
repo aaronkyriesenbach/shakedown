@@ -1,5 +1,6 @@
-import { forwardRef, useImperativeHandle, useRef, useEffect, useCallback } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useVideoPlayer } from '@/hooks/useVideoPlayer';
+import { useMediaSession } from '@/hooks/useMediaSession';
 import { VideoControls } from './VideoControls';
 import { ProcessingStatus } from '@/components/audio/ProcessingStatus';
 import { type Recording, thumbnailUrl, streamUrl } from '@/api/recordings';
@@ -59,6 +60,38 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         void videoRef.current.requestFullscreen();
       }
     }, []);
+
+    const play = useCallback(() => {
+      if (!isPlaying) togglePlay();
+    }, [isPlaying, togglePlay]);
+
+    const pause = useCallback(() => {
+      if (isPlaying) togglePlay();
+    }, [isPlaying, togglePlay]);
+
+    const stop = useCallback(() => {
+      if (videoRef.current && !videoRef.current.paused) {
+        videoRef.current.pause();
+      }
+    }, []);
+
+    const mediaSessionMarkers = useMemo(
+      () => songs?.map((s) => ({ title: s.title, startSeconds: s.start_seconds })),
+      [songs],
+    );
+
+    useMediaSession({
+      title: recording.title,
+      artworkUrl: posterUrl,
+      isPlaying,
+      currentTime,
+      duration,
+      onPlay: play,
+      onPause: pause,
+      onSeekToTime: seekToTime,
+      onStop: stop,
+      markers: mediaSessionMarkers,
+    });
 
     useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
