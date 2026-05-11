@@ -49,6 +49,7 @@ func (h *Handler) Routes(r chi.Router, requireAuth func(http.Handler) http.Handl
 		r.Patch("/", h.updateRecording)
 		r.Delete("/", h.deleteRecording)
 		r.With(requireAuth).Get("/stream", h.streamRecording)
+		r.With(requireAuth).Get("/audio-stream", h.audioStreamRecording)
 		r.With(requireAuth).Get("/download", h.downloadRecording)
 		r.With(requireAuth).Get("/waveform", h.waveformData)
 		r.With(requireAuth).Get("/thumbnail", h.thumbnailRecording)
@@ -407,6 +408,42 @@ func (h *Handler) streamRecording(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", contentType)
 	http.ServeContent(w, r, PlaybackFilename(rec.MediaType), fi.ModTime(), f)
+}
+
+func (h *Handler) audioStreamRecording(w http.ResponseWriter, r *http.Request) {
+	recordingID := chi.URLParam(r, "recordingID")
+	rec, err := h.svc.repo.GetByID(r.Context(), recordingID)
+	if err != nil || rec == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if rec.MediaType != "video" {
+		h.streamRecording(w, r)
+		return
+	}
+	if !rec.AudioExtractReady {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "processing"})
+		return
+	}
+
+	filePath := filepath.Join(h.svc.storage.root, rec.ID, AudioExtractFilename())
+	f, err := os.Open(filePath)
+	if err != nil {
+		http.Error(w, `{"error":"audio extract not found"}`, http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "audio/mp4")
+	http.ServeContent(w, r, AudioExtractFilename(), fi.ModTime(), f)
 }
 
 func (h *Handler) downloadRecording(w http.ResponseWriter, r *http.Request) {

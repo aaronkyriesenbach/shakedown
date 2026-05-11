@@ -56,6 +56,10 @@ export function shareStreamUrl(token: string) {
   return `${BASE_URL}/api/s/${token}/stream`;
 }
 
+export function shareAudioStreamUrl(token: string) {
+  return `${BASE_URL}/api/s/${token}/audio-stream`;
+}
+
 export function shareWaveformUrl(token: string) {
   return `${BASE_URL}/api/s/${token}/waveform`;
 }

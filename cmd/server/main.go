@@ -148,8 +148,9 @@ func main() {
 				r.Use(apimiddleware.RateLimit(100, time.Minute))
 				r.Use(shares.TokenMiddleware(db))
 				r.Get("/", shareHandler.GetShare)
-				r.Get("/stream", shareHandler.StreamShare)
-				r.Get("/waveform", shareHandler.WaveformShare)
+			r.Get("/stream", shareHandler.StreamShare)
+			r.Get("/audio-stream", shareHandler.AudioStreamShare)
+			r.Get("/waveform", shareHandler.WaveformShare)
 				r.Get("/download", shareHandler.DownloadShare)
 			}
 		})

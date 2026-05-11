@@ -9,6 +9,8 @@ import type { Song } from '@/api/songs';
 export interface VideoPlayerProps {
   recording: Recording;
   streamUrlOverride?: string;
+  initialTime?: number;
+  autoPlay?: boolean;
   onTimeUpdate?: (time: number) => void;
   onSeek?: (time: number) => void;
   songs?: Song[];
@@ -18,10 +20,13 @@ export interface VideoPlayerProps {
 
 export interface VideoPlayerRef {
   seekTo: (seconds: number) => void;
+  stop: () => void;
+  getCurrentTime: () => number;
+  getIsPlaying: () => boolean;
 }
 
 export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
-  ({ recording, streamUrlOverride, onTimeUpdate, onSeek, songs, onMarkerClick, className }, ref) => {
+  ({ recording, streamUrlOverride, initialTime, autoPlay, onTimeUpdate, onSeek, songs, onMarkerClick, className }, ref) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const videoUrl = streamUrlOverride ?? streamUrl(recording.id);
     const posterUrl = recording.thumbnail_ready ? thumbnailUrl(recording.id) : undefined;
@@ -36,10 +41,17 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       seekToTime,
       togglePlay,
       setVolume,
-    } = useVideoPlayer({ videoRef, onTimeUpdate, onSeek });
+    } = useVideoPlayer({ videoRef, initialTime, autoPlay, onTimeUpdate, onSeek });
 
     useImperativeHandle(ref, () => ({
       seekTo: seekToTime,
+      stop: () => {
+        if (videoRef.current && !videoRef.current.paused) {
+          videoRef.current.pause();
+        }
+      },
+      getCurrentTime: () => currentTime,
+      getIsPlaying: () => isPlaying,
     }));
 
     const handleFullscreen = useCallback(() => {

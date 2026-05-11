@@ -9,6 +9,8 @@ export interface WaveformPlayerProps {
   recording: Recording;
   audioUrlOverride?: string;
   peaksUrlOverride?: string;
+  initialTime?: number;
+  autoPlay?: boolean;
   onTimeUpdate?: (time: number) => void;
   onSeek?: (time: number) => void;
   className?: string;
@@ -16,10 +18,13 @@ export interface WaveformPlayerProps {
 
 export interface WaveformPlayerRef {
   seekTo: (seconds: number) => void;
+  stop: () => void;
+  getCurrentTime: () => number;
+  getIsPlaying: () => boolean;
 }
 
 export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>(
-  ({ recording, audioUrlOverride, peaksUrlOverride, onTimeUpdate, onSeek, className }, ref) => {
+  ({ recording, audioUrlOverride, peaksUrlOverride, initialTime, autoPlay, onTimeUpdate, onSeek, className }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const audioUrl = audioUrlOverride || `/api/recordings/${recording.id}/stream`;
     const peaksUrl = peaksUrlOverride !== undefined ? peaksUrlOverride : (recording.waveform_ready ? `/api/recordings/${recording.id}/waveform` : undefined);
@@ -34,17 +39,23 @@ export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>
       seekToTime,
       togglePlay,
       setVolume,
+      stop,
     } = useAudioPlayer({
       containerRef,
       audioUrl,
       peaksUrl,
       duration: recording.duration_seconds,
+      initialTime,
+      autoPlay,
       onTimeUpdate,
       onSeek,
     });
 
     useImperativeHandle(ref, () => ({
       seekTo: seekToTime,
+      stop,
+      getCurrentTime: () => currentTime,
+      getIsPlaying: () => isPlaying,
     }));
 
     useEffect(() => {

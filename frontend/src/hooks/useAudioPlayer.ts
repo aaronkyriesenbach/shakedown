@@ -6,6 +6,8 @@ export interface UseAudioPlayerProps {
   audioUrl: string;
   peaksUrl?: string;
   duration?: number;
+  initialTime?: number;
+  autoPlay?: boolean;
   onTimeUpdate?: (time: number) => void;
   onSeek?: (time: number) => void;
 }
@@ -20,6 +22,7 @@ export interface UseAudioPlayerReturn {
   seekToTime: (seconds: number) => void;
   togglePlay: () => void;
   setVolume: (v: number) => void;
+  stop: () => void;
 }
 
 export function useAudioPlayer({
@@ -27,6 +30,8 @@ export function useAudioPlayer({
   audioUrl,
   peaksUrl,
   duration: initialDuration,
+  initialTime,
+  autoPlay,
   onTimeUpdate,
   onSeek,
 }: UseAudioPlayerProps): UseAudioPlayerReturn {
@@ -98,6 +103,25 @@ export function useAudioPlayer({
       setDuration(ws.getDuration());
     });
 
+    // With preloaded peaks and WebAudio backend, 'ready' fires before the
+    // audio buffer is fetched. Seek/play must wait for the media's 'canplay'.
+    const needsInitialPlayback = (initialTime !== undefined && initialTime > 0) || autoPlay;
+    const handleCanPlay = needsInitialPlayback ? () => {
+      if (initialTime !== undefined && initialTime > 0) {
+        const totalDuration = ws.getDuration();
+        if (totalDuration > 0) {
+          ws.seekTo(Math.min(initialTime / totalDuration, 1));
+        }
+      }
+      if (autoPlay) {
+        ws.play();
+      }
+    } : null;
+
+    if (handleCanPlay) {
+      ws.getMediaElement().addEventListener('canplay', handleCanPlay, { once: true });
+    }
+
     ws.on('play', () => setIsPlaying(true));
     ws.on('pause', () => setIsPlaying(false));
     
@@ -116,10 +140,13 @@ export function useAudioPlayer({
     });
 
     return () => {
+      if (handleCanPlay) {
+        ws.getMediaElement().removeEventListener('canplay', handleCanPlay);
+      }
       ws.destroy();
       wavesurferRef.current = null;
     };
-  }, [containerRef, audioUrl, peaksLoaded, peaks, initialDuration, onTimeUpdate, onSeek]);
+  }, [containerRef, audioUrl, peaksLoaded, peaks, initialDuration, initialTime, autoPlay, onTimeUpdate, onSeek]);
 
   const togglePlay = useCallback(() => {
     if (wavesurferRef.current) {
@@ -149,6 +176,12 @@ export function useAudioPlayer({
     }
   }, []);
 
+  const stop = useCallback(() => {
+    if (wavesurferRef.current && wavesurferRef.current.isPlaying()) {
+      wavesurferRef.current.pause();
+    }
+  }, []);
+
   return {
     isPlaying,
     currentTime,
@@ -159,5 +192,6 @@ export function useAudioPlayer({
     seekToTime,
     togglePlay,
     setVolume,
+    stop,
   };
 }
