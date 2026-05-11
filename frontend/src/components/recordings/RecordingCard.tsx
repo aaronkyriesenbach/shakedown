@@ -20,8 +20,8 @@ export function RecordingCard({ recording, className }: RecordingCardProps) {
 
   return (
     <Card className={cn("group hover:border-indigo-500/50 transition-colors overflow-hidden", className)}>
-      <Link to={`/recordings/${recording.id}`} className="block p-4">
-        <div className="flex items-start justify-between gap-4 mb-3">
+      <Link to={`/recordings/${recording.id}`} className="block p-3 sm:p-4">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4 mb-3">
           <div className="flex items-center gap-3">
             <div className="bg-muted w-10 h-10 rounded-md flex items-center justify-center flex-shrink-0 text-muted-foreground group-hover:text-indigo-400 transition-colors overflow-hidden relative">
               {recording.media_type === 'video' && recording.thumbnail_ready && !thumbnailError ? (
@@ -39,10 +39,10 @@ export function RecordingCard({ recording, className }: RecordingCardProps) {
               )}
             </div>
             <div>
-              <h3 className="font-semibold text-lg leading-tight line-clamp-1 group-hover:text-indigo-400 transition-colors">
+              <h3 className="font-semibold text-lg leading-tight line-clamp-2 sm:line-clamp-1 group-hover:text-indigo-400 transition-colors">
                 {recording.title}
               </h3>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-1">
                 <span className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   {recording.duration_seconds ? formatDuration(recording.duration_seconds) : "—"}
@@ -58,8 +58,8 @@ export function RecordingCard({ recording, className }: RecordingCardProps) {
             </div>
           </div>
           
-          <div className="flex flex-col items-end gap-2 flex-shrink-0">
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-muted-foreground/30 text-muted-foreground">
+          <div className="flex flex-row sm:flex-col items-start sm:items-end gap-2 sm:flex-shrink-0">
+            <Badge variant="outline" className="hidden sm:inline-flex text-[10px] px-1.5 py-0 h-4 border-muted-foreground/30 text-muted-foreground">
               {recording.media_type === 'video' ? (
                 <><Video className="w-2.5 h-2.5 mr-1" />Video</>
               ) : (
