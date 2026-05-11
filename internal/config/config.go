@@ -31,6 +31,10 @@ type Config struct {
 	VideoProcessingMaxWorkers     int   `envconfig:"VIDEO_PROCESSING_MAX_WORKERS" default:"2"`
 	VideoProcessingTimeoutSeconds int   `envconfig:"VIDEO_PROCESSING_TIMEOUT_SECONDS" default:"3600"`
 	VideoUploadMaxSizeMB          int64 `envconfig:"VIDEO_UPLOAD_MAX_SIZE_MB" default:"4096"`
+
+	// Recovery loop configuration
+	RecoveryScanIntervalSeconds  int `envconfig:"RECOVERY_SCAN_INTERVAL_SECONDS" default:"120"`
+	RecoveryStaleThresholdSeconds int `envconfig:"RECOVERY_STALE_THRESHOLD_SECONDS" default:"3900"`
 }
 
 func Load() (*Config, error) {

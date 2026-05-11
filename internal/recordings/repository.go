@@ -99,6 +99,17 @@ func (repo *Repository) Create(ctx context.Context, input CreateRecordingInput) 
 	return &rec, nil
 }
 
+// NextTitleNumber returns the next sequential recording number that would be
+// used by createWithAutoTitle. This is a best-effort preview — the actual
+// number assigned during upload may differ under concurrent writes.
+func (repo *Repository) NextTitleNumber(ctx context.Context, date time.Time) (int, error) {
+	var count int
+	if err := repo.db.QueryRow(ctx, "SELECT COUNT(*) FROM recordings WHERE deleted_at IS NULL AND recorded_at::date = $1::date", date).Scan(&count); err != nil {
+		return 0, fmt.Errorf("recordings: count for next title number: %w", err)
+	}
+	return count + 1, nil
+}
+
 // createWithAutoTitle generates a unique sequential title inside a transaction
 // guarded by a PostgreSQL advisory lock, then inserts the recording.
 func (repo *Repository) createWithAutoTitle(ctx context.Context, id string, input CreateRecordingInput) (*Recording, error) {
@@ -114,7 +125,7 @@ func (repo *Repository) createWithAutoTitle(ctx context.Context, id string, inpu
 	}
 
 	var count int
-	if err := tx.QueryRow(ctx, "SELECT COUNT(*) FROM recordings WHERE deleted_at IS NULL").Scan(&count); err != nil {
+	if err := tx.QueryRow(ctx, "SELECT COUNT(*) FROM recordings WHERE deleted_at IS NULL AND recorded_at::date = $1::date", input.RecordedAt).Scan(&count); err != nil {
 		return nil, fmt.Errorf("recordings: count for auto-title: %w", err)
 	}
 
@@ -231,6 +242,43 @@ func (repo *Repository) UpdateProcessingStep(ctx context.Context, id string, ste
 		return fmt.Errorf("recordings: failed to update processing step: %w", err)
 	}
 	return nil
+}
+
+func (repo *Repository) FindStuckRecordings(ctx context.Context, staleThreshold time.Duration) ([]Recording, error) {
+	cutoff := time.Now().UTC().Add(-staleThreshold)
+	rows, err := repo.db.Query(ctx, `
+		SELECT id, title, file_ext, file_size_bytes, mime_type,
+			storage_path, uploaded_by, recorded_at, recorded_at_source,
+			duration_seconds, bitrate, sample_rate, channels,
+			playback_ready, waveform_ready, processing_error, processing_step,
+			media_type, thumbnail_ready, video_width, video_height,
+			created_at, updated_at, deleted_at
+		FROM recordings
+		WHERE deleted_at IS NULL
+			AND processing_step NOT IN ('complete', 'queued')
+			AND updated_at < $1
+	`, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("recordings: find stuck: %w", err)
+	}
+	defer rows.Close()
+
+	var recs []Recording
+	for rows.Next() {
+		var rec Recording
+		if err := rows.Scan(
+			&rec.ID, &rec.Title, &rec.FileExt, &rec.FileSizeBytes, &rec.MimeType,
+			&rec.StoragePath, &rec.UploadedBy, &rec.RecordedAt, &rec.RecordedAtSource,
+			&rec.DurationSeconds, &rec.Bitrate, &rec.SampleRate, &rec.Channels,
+			&rec.PlaybackReady, &rec.WaveformReady, &rec.ProcessingError, &rec.ProcessingStep,
+			&rec.MediaType, &rec.ThumbnailReady, &rec.VideoWidth, &rec.VideoHeight,
+			&rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt,
+		); err != nil {
+			return nil, fmt.Errorf("recordings: find stuck scan: %w", err)
+		}
+		recs = append(recs, rec)
+	}
+	return recs, rows.Err()
 }
 
 // ListFilter defines query parameters for listing recordings.
