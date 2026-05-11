@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Edit2, Trash2, Download, Share2, Tag as TagIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -49,6 +49,11 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
   const { data: comments = [], isLoading: isLoadingComments } = useComments(recording.id);
   const { data: currentUser } = useMe();
   const { data: songs } = useSongs(recording.id);
+
+  const songMarkers = useMemo(
+    () => songs?.map((s) => ({ title: s.title, startSeconds: s.start_seconds })),
+    [songs],
+  );
 
   const handleDelete = () => {
     deleteMutation.mutate(undefined, {
@@ -154,6 +159,7 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
             initialTime={transferTime}
             autoPlay={transferPlaying}
             onTimeUpdate={setCurrentTime}
+            markers={songMarkers}
           />
         )}
       </div>

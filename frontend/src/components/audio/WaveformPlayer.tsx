@@ -1,8 +1,9 @@
-import { forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useEffect, useCallback } from 'react';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
+import { useMediaSession, type MediaSessionMarker } from '@/hooks/useMediaSession';
 import { AudioControls } from './AudioControls';
 import { ProcessingStatus } from './ProcessingStatus';
-import { type Recording } from '@/api/recordings';
+import { type Recording, thumbnailUrl } from '@/api/recordings';
 import { cn } from '@/lib/utils';
 
 export interface WaveformPlayerProps {
@@ -13,6 +14,7 @@ export interface WaveformPlayerProps {
   autoPlay?: boolean;
   onTimeUpdate?: (time: number) => void;
   onSeek?: (time: number) => void;
+  markers?: MediaSessionMarker[];
   className?: string;
 }
 
@@ -24,7 +26,7 @@ export interface WaveformPlayerRef {
 }
 
 export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>(
-  ({ recording, audioUrlOverride, peaksUrlOverride, initialTime, autoPlay, onTimeUpdate, onSeek, className }, ref) => {
+  ({ recording, audioUrlOverride, peaksUrlOverride, initialTime, autoPlay, onTimeUpdate, onSeek, markers, className }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const audioUrl = audioUrlOverride || `/api/recordings/${recording.id}/stream`;
     const peaksUrl = peaksUrlOverride !== undefined ? peaksUrlOverride : (recording.waveform_ready ? `/api/recordings/${recording.id}/waveform` : undefined);
@@ -57,6 +59,29 @@ export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>
       getCurrentTime: () => currentTime,
       getIsPlaying: () => isPlaying,
     }));
+
+    const play = useCallback(() => {
+      if (!isPlaying) togglePlay();
+    }, [isPlaying, togglePlay]);
+
+    const pause = useCallback(() => {
+      if (isPlaying) togglePlay();
+    }, [isPlaying, togglePlay]);
+
+    const artworkUrl = recording.thumbnail_ready ? thumbnailUrl(recording.id) : undefined;
+
+    useMediaSession({
+      title: recording.title,
+      artworkUrl,
+      isPlaying,
+      currentTime,
+      duration,
+      onPlay: play,
+      onPause: pause,
+      onSeekToTime: seekToTime,
+      onStop: stop,
+      markers,
+    });
 
     useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
