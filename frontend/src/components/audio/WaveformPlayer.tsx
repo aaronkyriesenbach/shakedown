@@ -1,7 +1,7 @@
 import { forwardRef, useImperativeHandle, useRef, useEffect, useCallback } from 'react';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { useMediaSession, type MediaSessionMarker } from '@/hooks/useMediaSession';
-import { AudioControls } from './AudioControls';
+import { PlayerControls } from '@/components/player/PlayerControls';
 import { ProcessingStatus } from './ProcessingStatus';
 import { type Recording, thumbnailUrl } from '@/api/recordings';
 import { cn } from '@/lib/utils';
@@ -15,6 +15,8 @@ export interface WaveformPlayerProps {
   onTimeUpdate?: (time: number) => void;
   onSeek?: (time: number) => void;
   markers?: MediaSessionMarker[];
+  showVideo?: boolean;
+  onShowVideoChange?: (show: boolean) => void;
   className?: string;
 }
 
@@ -26,7 +28,7 @@ export interface WaveformPlayerRef {
 }
 
 export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>(
-  ({ recording, audioUrlOverride, peaksUrlOverride, initialTime, autoPlay, onTimeUpdate, onSeek, markers, className }, ref) => {
+  ({ recording, audioUrlOverride, peaksUrlOverride, initialTime, autoPlay, onTimeUpdate, onSeek, markers, showVideo, onShowVideoChange, className }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const audioUrl = audioUrlOverride || `/api/recordings/${recording.id}/stream`;
     const peaksUrl = peaksUrlOverride !== undefined ? peaksUrlOverride : (recording.waveform_ready ? `/api/recordings/${recording.id}/waveform` : undefined);
@@ -37,7 +39,6 @@ export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>
       duration,
       isReady,
       volume,
-      seek,
       seekToTime,
       togglePlay,
       setVolume,
@@ -125,7 +126,7 @@ export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>
     return (
       <div className={cn('p-4 rounded-lg bg-card border shadow-sm flex flex-col gap-4', className)}>
         <div ref={containerRef} className="w-full h-[60px] sm:h-[80px] bg-muted/20 rounded overflow-hidden touch-none" />
-        <AudioControls
+        <PlayerControls
           isPlaying={isPlaying}
           currentTime={currentTime}
           duration={duration}
@@ -133,7 +134,8 @@ export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>
           isReady={isReady}
           onTogglePlay={togglePlay}
           onVolumeChange={setVolume}
-          onSeek={seek}
+          showVideo={showVideo}
+          onShowVideoChange={onShowVideoChange}
         />
       </div>
     );

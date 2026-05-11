@@ -8,8 +8,6 @@ import { formatDuration, formatDate } from '@/lib/format';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
 import { useTheme } from '@/hooks/useTheme';
 
 export default function SharePage() {
@@ -110,16 +108,6 @@ export default function SharePage() {
 
         {recording ? (
           <Card className="p-6">
-            {recording.media_type === 'video' && (
-              <div className="flex items-center gap-2 mb-3">
-                <Checkbox
-                  id="share-show-video"
-                  checked={showVideo}
-                  onCheckedChange={handleVideoToggle}
-                />
-                <Label htmlFor="share-show-video" className="text-sm cursor-pointer">Show video</Label>
-              </div>
-            )}
             {recording.media_type === 'video' && showVideo ? (
               <VideoPlayer
                 ref={videoRef}
@@ -129,6 +117,8 @@ export default function SharePage() {
                 streamUrlOverride={shareStreamUrl(share.token)}
                 initialTime={transferTime}
                 autoPlay={transferPlaying}
+                showVideo={showVideo}
+                onShowVideoChange={(show) => handleVideoToggle(show)}
               />
             ) : (
               <WaveformPlayer
@@ -142,6 +132,8 @@ export default function SharePage() {
                 peaksUrlOverride={shareWaveformUrl(share.token)}
                 initialTime={transferTime}
                 autoPlay={transferPlaying}
+                showVideo={showVideo}
+                onShowVideoChange={recording.media_type === 'video' ? (show) => handleVideoToggle(show) : undefined}
               />
             )}
           </Card>
