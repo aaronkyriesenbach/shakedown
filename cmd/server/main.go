@@ -55,11 +55,9 @@ func main() {
 	ctx := context.Background()
 	db, err := database.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
-		logger.Warn("database connection failed (will retry on requests)", zap.Error(err))
+		logger.Fatal("database connection failed", zap.Error(err))
 	}
-	if db != nil {
-		defer db.Close()
-	}
+	defer db.Close()
 
 	var authHandler *auth.Handler
 	var requireAuth func(http.Handler) http.Handler
@@ -76,42 +74,33 @@ func main() {
 		}
 	}
 
-	var recHandler *recordings.Handler
-	var recSvc *recordings.Service
-	var songHandler *songs.Handler
-	var commentHandler *comments.Handler
-	var tagHandler *tags.Handler
-	var shareHandler *shares.Handler
-	var adminHandler *admin.Handler
-	if db != nil {
-		store, err := recordings.NewLocalStorage(cfg.StorageRoot)
-		if err != nil {
-			logger.Fatal("failed to initialize storage", zap.Error(err))
-		}
-		recRepo := recordings.NewRepository(db)
-		recSvc = recordings.NewService(recRepo, store, logger, cfg.ProcessingMaxWorkers, cfg.VideoProcessingMaxWorkers)
-		recSvc.StartRecoveryLoop(
-			time.Duration(cfg.RecoveryScanIntervalSeconds)*time.Second,
-			time.Duration(cfg.RecoveryStaleThresholdSeconds)*time.Second,
-			cfg.ProcessingTimeoutSeconds,
-			cfg.VideoProcessingTimeoutSeconds,
-		)
-		recHandler = recordings.NewHandler(recSvc, cfg, logger)
-
-		songRepo := songs.NewRepository(db)
-		songHandler = songs.NewHandler(songRepo, logger)
-
-		commentRepo := comments.NewRepository(db)
-		commentHandler = comments.NewHandler(commentRepo, logger)
-
-		tagRepo := tags.NewRepository(db)
-		tagHandler = tags.NewHandler(tagRepo, logger)
-
-		shareRepo := shares.NewRepository(db)
-		shareHandler = shares.NewHandler(shareRepo, recRepo, store, logger)
-
-		adminHandler = admin.NewHandler(db, cfg.StorageRoot, logger)
+	store, err := recordings.NewLocalStorage(cfg.StorageRoot)
+	if err != nil {
+		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
+	recRepo := recordings.NewRepository(db)
+	recSvc := recordings.NewService(recRepo, store, logger, cfg.ProcessingMaxWorkers, cfg.VideoProcessingMaxWorkers)
+	recSvc.StartRecoveryLoop(
+		time.Duration(cfg.RecoveryScanIntervalSeconds)*time.Second,
+		time.Duration(cfg.RecoveryStaleThresholdSeconds)*time.Second,
+		cfg.ProcessingTimeoutSeconds,
+		cfg.VideoProcessingTimeoutSeconds,
+	)
+	recHandler := recordings.NewHandler(recSvc, cfg, logger)
+
+	songRepo := songs.NewRepository(db)
+	songHandler := songs.NewHandler(songRepo, logger)
+
+	commentRepo := comments.NewRepository(db)
+	commentHandler := comments.NewHandler(commentRepo, logger)
+
+	tagRepo := tags.NewRepository(db)
+	tagHandler := tags.NewHandler(tagRepo, logger)
+
+	shareRepo := shares.NewRepository(db)
+	shareHandler := shares.NewHandler(shareRepo, recRepo, store, logger)
+
+	adminHandler := admin.NewHandler(db, cfg.StorageRoot, logger)
 
 	r := chi.NewRouter()
 
@@ -136,35 +125,25 @@ func main() {
 			}
 		})
 		r.Route("/recordings", func(r chi.Router) {
-			if recHandler != nil {
-				recHandler.Routes(r, requireAuth, songHandler, commentHandler, tagHandler)
-			}
+			recHandler.Routes(r, requireAuth, songHandler, commentHandler, tagHandler)
 		})
 		r.With(requireAuth).Route("/tags", func(r chi.Router) {
-			if tagHandler != nil {
-				tagHandler.Routes(r)
-			}
+			tagHandler.Routes(r)
 		})
 		r.Route("/shares", func(r chi.Router) {
-			if shareHandler != nil {
-				r.With(requireAuth).Post("/", shareHandler.CreateShare)
-			}
+			r.With(requireAuth).Post("/", shareHandler.CreateShare)
 		})
 		r.Route("/s/{token}", func(r chi.Router) {
-			if shareHandler != nil {
-				r.Use(apimiddleware.RateLimit(100, time.Minute))
-				r.Use(shares.TokenMiddleware(db))
-				r.Get("/", shareHandler.GetShare)
+			r.Use(apimiddleware.RateLimit(100, time.Minute))
+			r.Use(shares.TokenMiddleware(db))
+			r.Get("/", shareHandler.GetShare)
 			r.Get("/stream", shareHandler.StreamShare)
 			r.Get("/audio-stream", shareHandler.AudioStreamShare)
 			r.Get("/waveform", shareHandler.WaveformShare)
-				r.Get("/download", shareHandler.DownloadShare)
-			}
+			r.Get("/download", shareHandler.DownloadShare)
 		})
 		r.With(requireAuth).Route("/admin", func(r chi.Router) {
-			if adminHandler != nil {
-				adminHandler.Routes(r)
-			}
+			adminHandler.Routes(r)
 		})
 	})
 
@@ -195,9 +174,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if recSvc != nil {
-		recSvc.Shutdown()
-	}
+	recSvc.Shutdown()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("server shutdown error", zap.Error(err))
