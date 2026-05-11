@@ -4,7 +4,6 @@ import { ChevronLeft, Edit2, Trash2, Download, Share2, Tag as TagIcon } from 'lu
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -130,16 +129,6 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
       </div>
 
       <div className="w-full">
-        {recording.media_type === 'video' && (
-          <div className="flex items-center gap-2 mb-3">
-            <Checkbox
-              id="show-video"
-              checked={showVideo}
-              onCheckedChange={handleVideoToggle}
-            />
-            <Label htmlFor="show-video" className="text-sm cursor-pointer">Show video</Label>
-          </div>
-        )}
         {recording.media_type === 'video' && showVideo ? (
           <VideoPlayer
             ref={videoRef}
@@ -148,6 +137,8 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
             autoPlay={transferPlaying}
             onTimeUpdate={setCurrentTime}
             onSeek={handleSeek}
+            showVideo={showVideo}
+            onShowVideoChange={(show) => handleVideoToggle(show)}
             songs={songs ?? []}
             onMarkerClick={handleSeek}
           />
@@ -160,6 +151,8 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
             autoPlay={transferPlaying}
             onTimeUpdate={setCurrentTime}
             markers={songMarkers}
+            showVideo={showVideo}
+            onShowVideoChange={recording.media_type === 'video' ? (show) => handleVideoToggle(show) : undefined}
           />
         )}
       </div>

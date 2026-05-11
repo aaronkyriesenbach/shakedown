@@ -1,7 +1,7 @@
 import { forwardRef, useImperativeHandle, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useVideoPlayer } from '@/hooks/useVideoPlayer';
 import { useMediaSession } from '@/hooks/useMediaSession';
-import { VideoControls } from './VideoControls';
+import { PlayerControls } from '@/components/player/PlayerControls';
 import { ProcessingStatus } from '@/components/audio/ProcessingStatus';
 import { type Recording, thumbnailUrl, streamUrl } from '@/api/recordings';
 import { cn } from '@/lib/utils';
@@ -16,6 +16,8 @@ export interface VideoPlayerProps {
   onSeek?: (time: number) => void;
   songs?: Song[];
   onMarkerClick?: (startSeconds: number) => void;
+  showVideo?: boolean;
+  onShowVideoChange?: (show: boolean) => void;
   className?: string;
 }
 
@@ -27,7 +29,7 @@ export interface VideoPlayerRef {
 }
 
 export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
-  ({ recording, streamUrlOverride, initialTime, autoPlay, onTimeUpdate, onSeek, songs, onMarkerClick, className }, ref) => {
+  ({ recording, streamUrlOverride, initialTime, autoPlay, onTimeUpdate, onSeek, songs, onMarkerClick, showVideo, onShowVideoChange, className }, ref) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const videoUrl = streamUrlOverride ?? streamUrl(recording.id);
     const posterUrl = recording.thumbnail_ready ? thumbnailUrl(recording.id) : undefined;
@@ -138,7 +140,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           preload="metadata"
           playsInline
         />
-        <VideoControls
+        <PlayerControls
           isPlaying={isPlaying}
           currentTime={currentTime}
           duration={duration}
@@ -148,6 +150,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           onVolumeChange={setVolume}
           onSeek={seek}
           onFullscreen={handleFullscreen}
+          showVideo={showVideo}
+          onShowVideoChange={onShowVideoChange}
           songs={songs}
           onMarkerClick={onMarkerClick ?? seekToTime}
         />
