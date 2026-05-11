@@ -302,7 +302,7 @@ export function UploadForm() {
             ref={fileInputRef}
             className="hidden"
             multiple
-            accept="audio/*"
+            accept="audio/*,video/mp4,video/quicktime"
             onChange={(e) => {
               if (e.target.files?.length) {
                 addFiles(e.target.files);
@@ -317,7 +317,7 @@ export function UploadForm() {
           </div>
           
           <h3 className="text-lg font-semibold mb-1">
-            Drag & drop audio files
+            Drag & drop audio or video files
           </h3>
           <p className="text-sm text-muted-foreground mb-4">
             or click to browse from your computer
