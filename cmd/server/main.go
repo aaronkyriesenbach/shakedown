@@ -151,11 +151,11 @@ func main() {
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	srv := &http.Server{
-		Addr:         addr,
-		Handler:      r,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 0,
-		IdleTimeout:  120 * time.Second,
+		Addr:              addr,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      0,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	logger.Info("starting shakedown server", zap.String("addr", addr))
