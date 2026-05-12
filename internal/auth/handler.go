@@ -91,10 +91,11 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var claims struct {
-		Sub     string `json:"sub"`
-		Email   string `json:"email"`
-		Name    string `json:"name"`
-		Picture string `json:"picture"`
+		Sub     string   `json:"sub"`
+		Email   string   `json:"email"`
+		Name    string   `json:"name"`
+		Picture string   `json:"picture"`
+		Groups  []string `json:"groups"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
 		http.Error(w, "invalid token claims", http.StatusInternalServerError)
@@ -106,7 +107,19 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 		avatarURL = &claims.Picture
 	}
 
-	user, err := UpsertUser(r.Context(), h.db, claims.Sub, claims.Email, claims.Name, avatarURL)
+	var role *string
+	if h.cfg.AdminGroup != "" {
+		resolved := "user"
+		for _, g := range claims.Groups {
+			if g == h.cfg.AdminGroup {
+				resolved = "admin"
+				break
+			}
+		}
+		role = &resolved
+	}
+
+	user, err := UpsertUser(r.Context(), h.db, claims.Sub, claims.Email, claims.Name, avatarURL, role)
 	if err != nil {
 		h.logger.Error("failed to upsert user", zap.Error(err))
 		http.Error(w, "internal error", http.StatusInternalServerError)

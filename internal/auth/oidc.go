@@ -33,7 +33,7 @@ func NewProvider(ctx context.Context, cfg *config.Config) (*Provider, error) {
 		ClientSecret: cfg.OIDCClientSecret,
 		RedirectURL:  cfg.AppBaseURL + "/api/auth/callback",
 		Endpoint:     provider.Endpoint(),
-		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+		Scopes:       []string{oidc.ScopeOpenID, "profile", "email", "groups"},
 	}
 
 	return &Provider{

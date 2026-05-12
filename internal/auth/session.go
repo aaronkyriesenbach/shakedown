@@ -30,9 +30,12 @@ type Session struct {
 }
 
 // UpsertUser creates or updates a user based on OIDC claims.
-func UpsertUser(ctx context.Context, db *pgxpool.Pool, oidcSub, email, displayName string, avatarURL *string) (*User, error) {
+// If role is non-nil, the user's role is set/updated (used when ADMIN_GROUP is configured).
+// If role is nil, the role column is left unchanged (preserving manual admin management).
+func UpsertUser(ctx context.Context, db *pgxpool.Pool, oidcSub, email, displayName string, avatarURL *string, role *string) (*User, error) {
 	var user User
-	err := db.QueryRow(ctx, `
+
+	query := `
 		INSERT INTO users (oidc_sub, email, display_name, avatar_url)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (oidc_sub) DO UPDATE
@@ -40,8 +43,24 @@ func UpsertUser(ctx context.Context, db *pgxpool.Pool, oidcSub, email, displayNa
 		      display_name = EXCLUDED.display_name,
 		      avatar_url = EXCLUDED.avatar_url,
 		      updated_at = now()
-		RETURNING id, oidc_sub, email, display_name, avatar_url, role, created_at, updated_at
-	`, oidcSub, email, displayName, avatarURL).Scan(
+		RETURNING id, oidc_sub, email, display_name, avatar_url, role, created_at, updated_at`
+	args := []interface{}{oidcSub, email, displayName, avatarURL}
+
+	if role != nil {
+		query = `
+		INSERT INTO users (oidc_sub, email, display_name, avatar_url, role)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (oidc_sub) DO UPDATE
+		  SET email = EXCLUDED.email,
+		      display_name = EXCLUDED.display_name,
+		      avatar_url = EXCLUDED.avatar_url,
+		      role = EXCLUDED.role,
+		      updated_at = now()
+		RETURNING id, oidc_sub, email, display_name, avatar_url, role, created_at, updated_at`
+		args = append(args, *role)
+	}
+
+	err := db.QueryRow(ctx, query, args...).Scan(
 		&user.ID, &user.OIDCSub, &user.Email, &user.DisplayName,
 		&user.AvatarURL, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)

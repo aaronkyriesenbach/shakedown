@@ -19,6 +19,7 @@ type Config struct {
 	OIDCClientID     string `envconfig:"OIDC_CLIENT_ID"`
 	OIDCClientSecret string `envconfig:"OIDC_CLIENT_SECRET"`
 	AppBaseURL       string `envconfig:"APP_BASE_URL"`
+	AdminGroup       string `envconfig:"ADMIN_GROUP"`
 
 	SessionSecret string `envconfig:"SESSION_SECRET" required:"true"`
 
