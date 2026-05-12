@@ -1,13 +1,19 @@
 import { NavLink } from 'react-router-dom';
 import { Music, Upload, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
 
 export function NavLinks({ onClick }: { onClick?: () => void }) {
+  const { isAdmin } = useAuth();
+
   const navItems = [
     { to: '/', icon: Music, label: 'Library', end: true },
     { to: '/upload', icon: Upload, label: 'Upload' },
-    { to: '/admin', icon: Shield, label: 'Admin' },
   ];
+
+  if (isAdmin) {
+    navItems.push({ to: '/admin', icon: Shield, label: 'Admin' });
+  }
 
   return (
     <nav className="grid gap-1 px-2 py-4">
