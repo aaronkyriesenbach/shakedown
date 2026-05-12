@@ -50,6 +50,7 @@ export function UploadForm() {
   const [probeResults, setProbeResults] = useState<Record<string, ProbeResult>>({});
   const [probingFiles, setProbingFiles] = useState<Set<string>>(new Set());
   const probedFilesRef = useRef<Set<string>>(new Set());
+  const customTitlesRef = useRef<Set<string>>(new Set());
 
   const [uppy] = useState(() => {
     const u = new Uppy<UploadMeta, RecordingBody>({
@@ -154,7 +155,7 @@ export function UploadForm() {
       });
 
       setFileTitles(prev => {
-        if (prev[file.id] === undefined || prev[file.id] === '') {
+        if (!customTitlesRef.current.has(file.id) && (prev[file.id] === undefined || prev[file.id] === '')) {
           uppy.setFileMeta(file.id, { title: result.title_preview });
           return { ...prev, [file.id]: result.title_preview };
         }
@@ -268,6 +269,7 @@ export function UploadForm() {
     setProbeResults({});
     setProbingFiles(new Set());
     probedFilesRef.current.clear();
+    customTitlesRef.current.clear();
   };
 
   if (uploadResults) {
@@ -416,6 +418,7 @@ export function UploadForm() {
                   setProbeResults({});
                   setProbingFiles(new Set());
                   probedFilesRef.current.clear();
+                  customTitlesRef.current.clear();
                 }}
               >
                 Clear all
@@ -452,6 +455,11 @@ export function UploadForm() {
                         value={fileTitles[file.id] ?? ''}
                         onChange={(e) => {
                           const newTitle = e.target.value;
+                          if (newTitle.trim()) {
+                            customTitlesRef.current.add(file.id);
+                          } else {
+                            customTitlesRef.current.delete(file.id);
+                          }
                           setFileTitles(prev => ({ ...prev, [file.id]: newTitle }));
                           uppy.setFileMeta(file.id, { title: newTitle.trim() });
                         }}
@@ -489,11 +497,13 @@ export function UploadForm() {
                               delete next[file.id];
                               return next;
                             });
-                            setFileTitles(prev => {
-                              const next = { ...prev };
-                              delete next[file.id];
-                              return next;
-                            });
+                            if (!customTitlesRef.current.has(file.id)) {
+                              setFileTitles(prev => {
+                                const next = { ...prev };
+                                delete next[file.id];
+                                return next;
+                              });
+                            }
                             
                             probeFile(file, newDate, 0, true);
                           }}
@@ -531,6 +541,7 @@ export function UploadForm() {
                           return next;
                         });
                         probedFilesRef.current.delete(file.id);
+                        customTitlesRef.current.delete(file.id);
                       }}
                     >
                       <X className="w-4 h-4" />

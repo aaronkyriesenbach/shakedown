@@ -114,20 +114,10 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	recordedAt := time.Now().UTC()
 	recordedAtSource := "upload_timestamp"
 
-	probeResult, probeErr := runFFprobe(r.Context(), tmpPath)
-	if probeErr == nil {
-		if tagDate := parseDateFromTags(probeResult.Format.Tags); !tagDate.IsZero() {
-			recordedAt = tagDate
-			recordedAtSource = "embedded_tags"
-		}
-	}
-
-	if recordedAtSource == "upload_timestamp" {
-		if formDate := r.FormValue("recorded_at"); formDate != "" {
-			if t, err := time.Parse("2006-01-02", formDate); err == nil {
-				recordedAt = t.UTC()
-				recordedAtSource = "user_set"
-			}
+	if formDate := r.FormValue("recorded_at"); formDate != "" {
+		if t, err := time.Parse("2006-01-02", formDate); err == nil {
+			recordedAt = t.UTC()
+			recordedAtSource = "user_set"
 		}
 	}
 
