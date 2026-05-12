@@ -112,7 +112,7 @@ export function UploadForm() {
     };
   }, [uppy, syncFiles]);
 
-  const probeFile = useCallback(async (file: UppyFile<UploadMeta, RecordingBody>, fallbackDate: string, offset: number) => {
+  const probeFile = useCallback(async (file: UppyFile<UploadMeta, RecordingBody>, fallbackDate: string, offset: number, dateOverride?: boolean) => {
     setProbingFiles(prev => {
       const next = new Set(prev);
       next.add(file.id);
@@ -121,8 +121,15 @@ export function UploadForm() {
 
     try {
       const formData = new FormData();
-      formData.append('file', file.data as Blob, file.name);
-      formData.append('fallback_date', fallbackDate);
+      // Send only the first 10 MB — ffprobe needs only container headers for date extraction.
+      const blob = file.data as Blob;
+      const probeSlice = blob.slice(0, 10 * 1024 * 1024);
+      formData.append('file', probeSlice, file.name);
+      if (dateOverride) {
+        formData.append('date', fallbackDate);
+      } else {
+        formData.append('fallback_date', fallbackDate);
+      }
       if (offset > 0) {
         formData.append('offset', String(offset));
       }
@@ -488,7 +495,7 @@ export function UploadForm() {
                               return next;
                             });
                             
-                            probeFile(file, newDate, 0);
+                            probeFile(file, newDate, 0, true);
                           }}
                           className="h-7 w-auto text-xs border-transparent hover:border-input focus:border-input px-1 -ml-1 bg-transparent"
                         />
