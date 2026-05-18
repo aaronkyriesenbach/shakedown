@@ -43,7 +43,7 @@ func (h *Handler) Routes(r chi.Router, requireAuth func(http.Handler) http.Handl
 ) {
 	r.With(requireAuth).Get("/", h.listRecordings)
 	r.With(requireAuth).Post("/", h.upload)
-	r.With(requireAuth).Post("/probe", h.probe)
+	r.With(requireAuth).Post("/title-counts", h.titleCounts)
 	r.With(requireAuth).Route("/{recordingID}", func(r chi.Router) {
 		r.Get("/", h.getRecording)
 		r.Patch("/", h.updateRecording)
@@ -182,95 +182,47 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(rec)
 }
 
-func (h *Handler) probe(w http.ResponseWriter, r *http.Request) {
-	maxBytes := h.cfg.VideoUploadMaxSizeMB * 1024 * 1024
-	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
-
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"invalid multipart form: %v"}`, err), http.StatusBadRequest)
+func (h *Handler) titleCounts(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Dates []string `json:"dates"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
 	}
 
-	file, _, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, `{"error":"missing file field"}`, http.StatusBadRequest)
+	if len(req.Dates) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"counts":{}}`))
 		return
 	}
-	defer file.Close()
 
-	tmpFile, err := os.CreateTemp(h.svc.storage.root, "shakedown-probe-*")
+	if len(req.Dates) > 100 {
+		http.Error(w, `{"error":"too many dates (max 100)"}`, http.StatusBadRequest)
+		return
+	}
+
+	dates := make([]time.Time, 0, len(req.Dates))
+	for _, d := range req.Dates {
+		t, err := time.Parse("2006-01-02", d)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"invalid date %q"}`, d), http.StatusBadRequest)
+			return
+		}
+		dates = append(dates, t)
+	}
+
+	counts, err := h.svc.repo.TitleCountsByDate(r.Context(), dates)
 	if err != nil {
-		h.logger.Error("probe: failed to create temp file", zap.Error(err))
+		h.logger.Error("title-counts: failed to query", zap.Error(err))
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
-
-	if _, err := io.Copy(tmpFile, file); err != nil {
-		tmpFile.Close()
-		h.logger.Error("probe: failed to write temp file", zap.Error(err))
-		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
-		return
-	}
-	tmpFile.Close()
-
-	recordedAt := time.Now().UTC()
-	recordedAtSource := "upload_timestamp"
-
-	if formDate := r.FormValue("date"); formDate != "" {
-		if t, err := time.Parse("2006-01-02", formDate); err == nil {
-			recordedAt = t.UTC()
-			recordedAtSource = "user_set"
-		}
-	}
-
-	if recordedAtSource == "upload_timestamp" {
-		probeResult, probeErr := runFFprobe(r.Context(), tmpPath)
-		if probeErr == nil {
-			if tagDate := parseDateFromTags(probeResult.Format.Tags); !tagDate.IsZero() {
-				recordedAt = tagDate
-				recordedAtSource = "embedded_tags"
-			}
-		}
-	}
-
-	if recordedAtSource == "upload_timestamp" {
-		if formDate := r.FormValue("fallback_date"); formDate != "" {
-			if t, err := time.Parse("2006-01-02", formDate); err == nil {
-				recordedAt = t.UTC()
-				recordedAtSource = "user_set"
-			}
-		}
-	}
-
-	nextNum, err := h.svc.repo.NextTitleNumber(r.Context(), recordedAt)
-	if err != nil {
-		h.logger.Error("probe: failed to get next title number", zap.Error(err))
-		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
-		return
-	}
-
-	if o := r.FormValue("offset"); o != "" {
-		if n, err := strconv.Atoi(o); err == nil && n > 0 {
-			nextNum += n
-		}
-	}
-
-	titlePreview := fmt.Sprintf("Recording #%d %s", nextNum, recordedAt.Format("2006-01-02"))
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct {
-		RecordedAt    string `json:"recorded_at"`
-		NextNumber    int    `json:"next_number"`
-		TitlePreview  string `json:"title_preview"`
-		DateSource    string `json:"date_source"`
-	}{
-		RecordedAt:   recordedAt.Format("2006-01-02"),
-		NextNumber:   nextNum,
-		TitlePreview: titlePreview,
-		DateSource:   recordedAtSource,
-	})
+		Counts map[string]int `json:"counts"`
+	}{Counts: counts})
 }
 
 func (h *Handler) listRecordings(w http.ResponseWriter, r *http.Request) {

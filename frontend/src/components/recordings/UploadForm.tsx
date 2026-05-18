@@ -1,17 +1,56 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Uppy, { type Meta, type Body } from '@uppy/core';
 import type { UploadResult, UppyFile } from '@uppy/core';
 import XHRUpload from '@uppy/xhr-upload';
 import { toast } from 'sonner';
-import { Upload, X, Music, Loader2, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Upload, X, Music, Loader2, CheckCircle2, AlertCircle, RefreshCw, FolderOpen } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { formatFileSize } from '@/lib/format';
+import { extractRecordingDate } from '@/lib/metadata';
 import { apiFetch } from '@/api/client';
 import type { Recording } from '@/api/recordings';
+
+const SUPPORTED_EXTENSIONS = new Set(['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.mp4', '.mov']);
+
+function isSupportedFile(file: File): boolean {
+  const mimeType = file.type.toLowerCase();
+  if (mimeType.startsWith('audio/') || mimeType === 'video/mp4' || mimeType === 'video/quicktime') {
+    return true;
+  }
+  const ext = ('.' + (file.name.split('.').pop() ?? '').toLowerCase());
+  return SUPPORTED_EXTENSIONS.has(ext);
+}
+
+async function readAllDirectoryEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
+  const entries: FileSystemEntry[] = [];
+  let batch: FileSystemEntry[];
+  do {
+    batch = await new Promise<FileSystemEntry[]>((resolve, reject) =>
+      reader.readEntries(resolve, reject),
+    );
+    entries.push(...batch);
+  } while (batch.length > 0);
+  return entries;
+}
+
+async function collectFilesFromEntry(entry: FileSystemEntry, files: File[]): Promise<void> {
+  if (entry.isFile) {
+    const file = await new Promise<File>((resolve, reject) =>
+      (entry as FileSystemFileEntry).file(resolve, reject),
+    );
+    if (isSupportedFile(file)) {
+      files.push(file);
+    }
+  } else if (entry.isDirectory) {
+    const reader = (entry as FileSystemDirectoryEntry).createReader();
+    const entries = await readAllDirectoryEntries(reader);
+    await Promise.all(entries.map((child) => collectFilesFromEntry(child, files)));
+  }
+}
 
 interface UploadMeta extends Meta {
   title?: string;
@@ -31,26 +70,20 @@ type UploadResultType = {
   success: boolean;
 };
 
-interface ProbeResult {
-  title_preview: string;
-  recorded_at: string;
-  next_number: number;
-  date_source: string;
-}
-
 export function UploadForm() {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [fileDates, setFileDates] = useState<Record<string, string>>({});
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<UppyFile<UploadMeta, RecordingBody>[]>([]);
-  const [fileTitles, setFileTitles] = useState<Record<string, string>>({});
+  const [fileDates, setFileDates] = useState<Record<string, string>>({});
+  const [titleCounts, setTitleCounts] = useState<Record<string, number>>({});
+  const [customTitles, setCustomTitles] = useState<Record<string, string>>({});
+  const [analyzingFiles, setAnalyzingFiles] = useState<Set<string>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadResults, setUploadResults] = useState<UploadResultType[] | null>(null);
   const [polledRecordings, setPolledRecordings] = useState<Record<string, Recording>>({});
-  const [probeResults, setProbeResults] = useState<Record<string, ProbeResult>>({});
-  const [probingFiles, setProbingFiles] = useState<Set<string>>(new Set());
-  const probedFilesRef = useRef<Set<string>>(new Set());
-  const customTitlesRef = useRef<Set<string>>(new Set());
+  const analyzedFilesRef = useRef<Set<string>>(new Set());
+  const fetchedDatesRef = useRef<Set<string>>(new Set());
 
   const [uppy] = useState(() => {
     const u = new Uppy<UploadMeta, RecordingBody>({
@@ -113,76 +146,111 @@ export function UploadForm() {
     };
   }, [uppy, syncFiles]);
 
-  const probeFile = useCallback(async (file: UppyFile<UploadMeta, RecordingBody>, fallbackDate: string, offset: number, dateOverride?: boolean) => {
-    setProbingFiles(prev => {
-      const next = new Set(prev);
-      next.add(file.id);
-      return next;
-    });
+  const displayTitles = useMemo(() => {
+    const offsets: Record<string, number> = {};
+    const titles: Record<string, string> = {};
+    const today = new Date().toISOString().split('T')[0];
 
-    try {
-      const formData = new FormData();
-      // Send only the first 10 MB — ffprobe needs only container headers for date extraction.
-      const blob = file.data as Blob;
-      const probeSlice = blob.slice(0, 10 * 1024 * 1024);
-      formData.append('file', probeSlice, file.name);
-      if (dateOverride) {
-        formData.append('date', fallbackDate);
-      } else {
-        formData.append('fallback_date', fallbackDate);
+    for (const file of files) {
+      if (customTitles[file.id]) {
+        titles[file.id] = customTitles[file.id];
+        continue;
       }
-      if (offset > 0) {
-        formData.append('offset', String(offset));
-      }
-
-      const res = await fetch('/api/recordings/probe', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include',
-      });
-
-      if (!res.ok) return;
-
-      const result: ProbeResult = await res.json();
-      setProbeResults(prev => ({ ...prev, [file.id]: result }));
-
-      setFileDates(prev => {
-        if (prev[file.id] === undefined) {
-          uppy.setFileMeta(file.id, { recorded_at: result.recorded_at });
-          return { ...prev, [file.id]: result.recorded_at };
-        }
-        return prev;
-      });
-
-      setFileTitles(prev => {
-        if (!customTitlesRef.current.has(file.id) && (prev[file.id] === undefined || prev[file.id] === '')) {
-          uppy.setFileMeta(file.id, { title: result.title_preview });
-          return { ...prev, [file.id]: result.title_preview };
-        }
-        return prev;
-      });
-    } catch {
-      // Probe failed — title will be auto-generated by backend on upload
-    } finally {
-      setProbingFiles(prev => {
-        const next = new Set(prev);
-        next.delete(file.id);
-        return next;
-      });
+      const date = fileDates[file.id] ?? today;
+      const baseCount = titleCounts[date] ?? 0;
+      const offset = offsets[date] ?? 0;
+      const number = baseCount + offset + 1;
+      offsets[date] = offset + 1;
+      titles[file.id] = `Recording #${number} ${date}`;
     }
-  }, [uppy]);
+
+    return titles;
+  }, [files, fileDates, titleCounts, customTitles]);
 
   useEffect(() => {
-    let offset = 0;
-    const today = new Date().toISOString().split('T')[0];
-    for (const file of files) {
-      if (!probedFilesRef.current.has(file.id)) {
-        probedFilesRef.current.add(file.id);
-        probeFile(file, today, offset);
-        offset++;
-      }
+    const newFiles = files.filter(f => !analyzedFilesRef.current.has(f.id));
+    if (newFiles.length === 0) return;
+
+    for (const file of newFiles) {
+      analyzedFilesRef.current.add(file.id);
     }
-  }, [files, probeFile]);
+
+    const analyze = async () => {
+      setAnalyzingFiles(prev => {
+        const next = new Set(prev);
+        for (const f of newFiles) next.add(f.id);
+        return next;
+      });
+
+      const extractedDates: Record<string, string> = {};
+      const today = new Date().toISOString().split('T')[0];
+
+      await Promise.all(
+        newFiles.map(async (file) => {
+          try {
+            const date = await extractRecordingDate(file.data as File);
+            extractedDates[file.id] = date ?? today;
+          } catch {
+            extractedDates[file.id] = today;
+          }
+        }),
+      );
+
+      setFileDates(prev => {
+        const merged = { ...prev };
+        for (const [id, date] of Object.entries(extractedDates)) {
+          if (merged[id] === undefined) {
+            merged[id] = date;
+          }
+        }
+        return merged;
+      });
+
+      setAnalyzingFiles(prev => {
+        const next = new Set(prev);
+        for (const f of newFiles) next.delete(f.id);
+        return next;
+      });
+    };
+
+    analyze();
+  }, [files]);
+
+  useEffect(() => {
+    const newDates = [...new Set(Object.values(fileDates))].filter(
+      d => !fetchedDatesRef.current.has(d),
+    );
+    if (newDates.length === 0) return;
+
+    for (const d of newDates) {
+      fetchedDatesRef.current.add(d);
+    }
+
+    const fetchCounts = async () => {
+      try {
+        const data = await apiFetch<{ counts: Record<string, number> }>(
+          '/api/recordings/title-counts',
+          {
+            method: 'POST',
+            body: JSON.stringify({ dates: newDates }),
+          },
+        );
+        setTitleCounts(prev => ({ ...prev, ...data.counts }));
+      } catch {
+      }
+    };
+
+    fetchCounts();
+  }, [fileDates]);
+
+  useEffect(() => {
+    for (const file of files) {
+      const title = displayTitles[file.id];
+      const date = fileDates[file.id];
+      if (title) uppy.setFileMeta(file.id, { title });
+      if (date) uppy.setFileMeta(file.id, { recorded_at: date });
+    }
+  }, [files, displayTitles, fileDates, uppy]);
 
   const polledRef = useRef(polledRecordings);
   polledRef.current = polledRecordings;
@@ -242,12 +310,34 @@ export function UploadForm() {
     });
   }, [uppy]);
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files?.length > 0) {
-      addFiles(e.dataTransfer.files);
+
+    const items = e.dataTransfer.items;
+    if (!items?.length) return;
+
+    const entries = Array.from(items)
+      .map((item) => item.webkitGetAsEntry())
+      .filter((entry): entry is FileSystemEntry => entry !== null);
+
+    if (entries.length === 0) {
+      // Fallback for browsers that don't support webkitGetAsEntry
+      if (e.dataTransfer.files?.length > 0) {
+        addFiles(e.dataTransfer.files);
+      }
+      return;
     }
+
+    const files: File[] = [];
+    await Promise.all(entries.map((entry) => collectFilesFromEntry(entry, files)));
+
+    if (files.length === 0) {
+      toast.info('No supported audio or video files found');
+      return;
+    }
+
+    addFiles(files);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -264,12 +354,12 @@ export function UploadForm() {
     uppy.cancelAll();
     setUploadResults(null);
     setPolledRecordings({});
-    setFileTitles({});
     setFileDates({});
-    setProbeResults({});
-    setProbingFiles(new Set());
-    probedFilesRef.current.clear();
-    customTitlesRef.current.clear();
+    setTitleCounts({});
+    setCustomTitles({});
+    setAnalyzingFiles(new Set());
+    analyzedFilesRef.current.clear();
+    fetchedDatesRef.current.clear();
   };
 
   if (uploadResults) {
@@ -375,7 +465,28 @@ export function UploadForm() {
               if (e.target.files?.length) {
                 addFiles(e.target.files);
               }
-              // Reset input so the same file can be selected again
+              e.target.value = '';
+            }}
+          />
+          <input
+            type="file"
+            ref={folderInputRef}
+            className="hidden"
+            multiple
+            webkitdirectory=""
+            onChange={(e) => {
+              if (e.target.files?.length) {
+                const supported = Array.from(e.target.files).filter(isSupportedFile);
+                const skipped = e.target.files.length - supported.length;
+                if (skipped > 0) {
+                  toast.info(`Skipped ${skipped} unsupported file${skipped === 1 ? '' : 's'}`);
+                }
+                if (supported.length > 0) {
+                  addFiles(supported);
+                } else {
+                  toast.info('No supported audio or video files found in folder');
+                }
+              }
               e.target.value = '';
             }}
           />
@@ -385,20 +496,32 @@ export function UploadForm() {
           </div>
           
           <h3 className="text-lg font-semibold mb-1">
-            Drag & drop audio or video files
+            Drag & drop files or folders
           </h3>
           <p className="text-sm text-muted-foreground mb-4">
-            or click to browse from your computer
+            or browse for audio and video files from your computer
           </p>
           
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-          >
-            Select Files
-          </Button>
+          <div className="flex items-center gap-2 justify-center">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Select Files
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => folderInputRef.current?.click()}
+              disabled={isUploading}
+            >
+              <FolderOpen className="w-4 h-4 mr-2" />
+              Select Folder
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -413,12 +536,12 @@ export function UploadForm() {
                 className="h-8 text-muted-foreground"
                 onClick={() => {
                   uppy.cancelAll();
-                  setFileTitles({});
                   setFileDates({});
-                  setProbeResults({});
-                  setProbingFiles(new Set());
-                  probedFilesRef.current.clear();
-                  customTitlesRef.current.clear();
+                  setTitleCounts({});
+                  setCustomTitles({});
+                  setAnalyzingFiles(new Set());
+                  analyzedFilesRef.current.clear();
+                  fetchedDatesRef.current.clear();
                 }}
               >
                 Clear all
@@ -428,8 +551,7 @@ export function UploadForm() {
           
           <div className="space-y-2">
             {files.map((file) => {
-              const isProbing = probingFiles.has(file.id);
-              const probe = probeResults[file.id];
+              const isAnalyzing = analyzingFiles.has(file.id);
 
               return (
                 <div
@@ -443,28 +565,30 @@ export function UploadForm() {
                   <div className="flex-1 min-w-0">
                     {isUploading ? (
                       <div className="font-medium text-sm truncate">
-                        {fileTitles[file.id] || file.name}
+                        {displayTitles[file.id] || file.name}
                       </div>
-                    ) : isProbing ? (
+                    ) : isAnalyzing ? (
                       <div className="flex items-center gap-2 h-7">
                         <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
                         <span className="text-sm text-muted-foreground">Analyzing...</span>
                       </div>
                     ) : (
                       <Input
-                        value={fileTitles[file.id] ?? ''}
+                        value={customTitles[file.id] ?? displayTitles[file.id] ?? ''}
                         onChange={(e) => {
                           const newTitle = e.target.value;
                           if (newTitle.trim()) {
-                            customTitlesRef.current.add(file.id);
+                            setCustomTitles(prev => ({ ...prev, [file.id]: newTitle }));
                           } else {
-                            customTitlesRef.current.delete(file.id);
+                            setCustomTitles(prev => {
+                              const next = { ...prev };
+                              delete next[file.id];
+                              return next;
+                            });
                           }
-                          setFileTitles(prev => ({ ...prev, [file.id]: newTitle }));
-                          uppy.setFileMeta(file.id, { title: newTitle.trim() });
                         }}
                         className="h-7 text-sm font-medium border-transparent hover:border-input focus:border-input px-1 -ml-1 bg-transparent"
-                        placeholder={probe?.title_preview ?? 'Enter a title'}
+                        placeholder="Enter a title"
                       />
                     )}
                     <div className="flex items-center gap-2 mt-1">
@@ -481,35 +605,17 @@ export function UploadForm() {
                         </span>
                       )}
                     </div>
-                    {!isUploading && !isProbing && (
+                    {!isUploading && !isAnalyzing && (
                       <div className="flex items-center gap-2 mt-1">
                         <Input
                           type="date"
                           value={fileDates[file.id] || ''}
                           onChange={(e) => {
-                            const newDate = e.target.value;
-                            setFileDates(prev => ({ ...prev, [file.id]: newDate }));
-                            uppy.setFileMeta(file.id, { recorded_at: newDate });
-                            probedFilesRef.current.delete(file.id);
-                            
-                            setProbeResults(prev => {
-                              const next = { ...prev };
-                              delete next[file.id];
-                              return next;
-                            });
-                            if (!customTitlesRef.current.has(file.id)) {
-                              setFileTitles(prev => {
-                                const next = { ...prev };
-                                delete next[file.id];
-                                return next;
-                              });
-                            }
-                            
-                            probeFile(file, newDate, 0, true);
+                            setFileDates(prev => ({ ...prev, [file.id]: e.target.value }));
                           }}
                           className="h-7 w-auto text-xs border-transparent hover:border-input focus:border-input px-1 -ml-1 bg-transparent"
                         />
-                        {probe?.date_source === 'embedded_tags' && (
+                        {fileDates[file.id] && fileDates[file.id] !== new Date().toISOString().split('T')[0] && (
                           <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md">
                             from metadata
                           </span>
@@ -525,7 +631,7 @@ export function UploadForm() {
                       className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-1/2 -translate-y-1/2"
                       onClick={() => {
                         uppy.removeFile(file.id);
-                        setFileTitles(prev => {
+                        setCustomTitles(prev => {
                           const next = { ...prev };
                           delete next[file.id];
                           return next;
@@ -535,13 +641,7 @@ export function UploadForm() {
                           delete next[file.id];
                           return next;
                         });
-                        setProbeResults(prev => {
-                          const next = { ...prev };
-                          delete next[file.id];
-                          return next;
-                        });
-                        probedFilesRef.current.delete(file.id);
-                        customTitlesRef.current.delete(file.id);
+                        analyzedFilesRef.current.delete(file.id);
                       }}
                     >
                       <X className="w-4 h-4" />
@@ -563,14 +663,14 @@ export function UploadForm() {
             className="w-full"
             size="lg"
             onClick={() => uppy.upload()}
-            disabled={isUploading || probingFiles.size > 0}
+            disabled={isUploading || analyzingFiles.size > 0}
           >
             {isUploading ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Uploading...
               </>
-            ) : probingFiles.size > 0 ? (
+            ) : analyzingFiles.size > 0 ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Analyzing files...
