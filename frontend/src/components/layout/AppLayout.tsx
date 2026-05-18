@@ -1,5 +1,4 @@
 import { Outlet } from 'react-router-dom';
-import { Music } from 'lucide-react';
 import { Header } from './Header';
 import { NavLinks } from './NavLinks';
 import { MobileNav } from './MobileNav';
@@ -10,7 +9,7 @@ export function AppLayout() {
       {/* Desktop Sidebar */}
       <aside className="hidden w-[240px] flex-col border-r bg-card/50 sm:flex">
         <div className="flex h-16 items-center gap-2 border-b px-6">
-          <Music className="h-6 w-6" />
+          <img src="/icon.png" alt="Shakedown" className="h-6 w-6 rounded" />
           <span className="text-lg font-bold tracking-tight">Shakedown</span>
         </div>
         <div className="flex-1 overflow-auto">
