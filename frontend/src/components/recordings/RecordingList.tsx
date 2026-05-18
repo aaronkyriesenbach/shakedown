@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Music, ChevronDown } from 'lucide-react';
-import { useRecordings, type ListFilter } from '@/api/recordings';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Music, ChevronDown, Loader2 } from 'lucide-react';
+import { useInfiniteRecordings, type ListFilter } from '@/api/recordings';
 import { RecordingCard, type RecordingWithTags } from './RecordingCard';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -21,7 +21,36 @@ interface RecordingListProps {
 }
 
 export function RecordingList({ filter }: RecordingListProps) {
-  const { data, isLoading, isError } = useRecordings(filter);
+  const {
+    data,
+    isLoading,
+    isError,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteRecordings(filter);
+
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const handleIntersect = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
+      }
+    },
+    [hasNextPage, isFetchingNextPage, fetchNextPage],
+  );
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(handleIntersect, {
+      rootMargin: '200px',
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [handleIntersect]);
 
   if (isLoading) {
     return (
@@ -48,7 +77,8 @@ export function RecordingList({ filter }: RecordingListProps) {
     );
   }
 
-  const recordings = data?.data || [];
+  const recordings = data?.pages.flatMap((page) => page.data) ?? [];
+  const totalCount = data?.pages[0]?.total ?? 0;
   const hasFilters = !!(filter.search || filter.tag || filter.from || filter.to);
 
   if (recordings.length === 0) {
@@ -67,8 +97,8 @@ export function RecordingList({ filter }: RecordingListProps) {
     );
   }
 
-  const monthFmt = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' });
-  const dayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const monthFmt = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const dayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
 
   const months: Record<string, MonthGroup> = {};
 
@@ -112,6 +142,20 @@ export function RecordingList({ filter }: RecordingListProps) {
           </div>
         </div>
       ))}
+
+      <div ref={sentinelRef} className="h-1" />
+
+      {isFetchingNextPage && (
+        <div className="flex items-center justify-center py-4">
+          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        </div>
+      )}
+
+      {!hasNextPage && totalCount > 20 && (
+        <p className="text-center text-sm text-muted-foreground py-2">
+          All {totalCount} recordings loaded
+        </p>
+      )}
     </div>
   );
 }

@@ -36,6 +36,7 @@ export function formatDate(dateStr: string): string {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+    timeZone: 'UTC',
   }).format(new Date(dateStr));
 }
 
