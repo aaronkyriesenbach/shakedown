@@ -109,47 +109,7 @@ func (repo *Repository) Create(ctx context.Context, input CreateRecordingInput) 
 	return &rec, nil
 }
 
-// NextTitleNumber returns the next sequential recording number that would be
-// used by createWithAutoTitle. This is a best-effort preview — the actual
-// number assigned during upload may differ under concurrent writes.
-func (repo *Repository) NextTitleNumber(ctx context.Context, date time.Time) (int, error) {
-	var count int
-	if err := repo.db.QueryRow(ctx, "SELECT COUNT(*) FROM recordings WHERE deleted_at IS NULL AND CAST(recorded_at AT TIME ZONE 'UTC' AS date) = $1::date", date).Scan(&count); err != nil {
-		return 0, fmt.Errorf("recordings: count for next title number: %w", err)
-	}
-	return count + 1, nil
-}
 
-// TitleCountsByDate returns the count of existing recordings for each given date.
-func (repo *Repository) TitleCountsByDate(ctx context.Context, dates []time.Time) (map[string]int, error) {
-	if len(dates) == 0 {
-		return map[string]int{}, nil
-	}
-
-	rows, err := repo.db.Query(ctx,
-		`SELECT CAST(recorded_at AT TIME ZONE 'UTC' AS date) AS d, COUNT(*)
-		 FROM recordings
-		 WHERE deleted_at IS NULL
-		   AND CAST(recorded_at AT TIME ZONE 'UTC' AS date) = ANY($1::date[])
-		 GROUP BY d`,
-		dates,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("recordings: title counts by date: %w", err)
-	}
-	defer rows.Close()
-
-	counts := make(map[string]int, len(dates))
-	for rows.Next() {
-		var d time.Time
-		var count int
-		if err := rows.Scan(&d, &count); err != nil {
-			return nil, fmt.Errorf("recordings: scan title count row: %w", err)
-		}
-		counts[d.Format("2006-01-02")] = count
-	}
-	return counts, rows.Err()
-}
 
 // createWithAutoTitle generates a unique sequential title inside a transaction
 // guarded by a PostgreSQL advisory lock, then inserts the recording.
@@ -170,7 +130,7 @@ func (repo *Repository) createWithAutoTitle(ctx context.Context, id string, inpu
 		return nil, fmt.Errorf("recordings: count for auto-title: %w", err)
 	}
 
-	input.Title = fmt.Sprintf("Recording #%d %s", count+1, input.RecordedAt.Format("2006-01-02"))
+	input.Title = fmt.Sprintf("Recording #%d", count+1)
 
 	var rec Recording
 	err = tx.QueryRow(ctx, `

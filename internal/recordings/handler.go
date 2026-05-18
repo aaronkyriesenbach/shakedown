@@ -43,7 +43,7 @@ func (h *Handler) Routes(r chi.Router, requireAuth func(http.Handler) http.Handl
 ) {
 	r.With(requireAuth).Get("/", h.listRecordings)
 	r.With(requireAuth).Post("/", h.upload)
-	r.With(requireAuth).Post("/title-counts", h.titleCounts)
+
 	r.With(requireAuth).Route("/{recordingID}", func(r chi.Router) {
 		r.Get("/", h.getRecording)
 		r.Patch("/", h.updateRecording)
@@ -182,48 +182,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(rec)
 }
 
-func (h *Handler) titleCounts(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Dates []string `json:"dates"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
-		return
-	}
 
-	if len(req.Dates) == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"counts":{}}`))
-		return
-	}
-
-	if len(req.Dates) > 100 {
-		http.Error(w, `{"error":"too many dates (max 100)"}`, http.StatusBadRequest)
-		return
-	}
-
-	dates := make([]time.Time, 0, len(req.Dates))
-	for _, d := range req.Dates {
-		t, err := time.Parse("2006-01-02", d)
-		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":"invalid date %q"}`, d), http.StatusBadRequest)
-			return
-		}
-		dates = append(dates, t)
-	}
-
-	counts, err := h.svc.repo.TitleCountsByDate(r.Context(), dates)
-	if err != nil {
-		h.logger.Error("title-counts: failed to query", zap.Error(err))
-		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(struct {
-		Counts map[string]int `json:"counts"`
-	}{Counts: counts})
-}
 
 func (h *Handler) listRecordings(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()

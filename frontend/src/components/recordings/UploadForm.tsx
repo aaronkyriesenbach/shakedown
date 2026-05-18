@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Uppy, { type Meta, type Body } from '@uppy/core';
 import type { UploadResult, UppyFile } from '@uppy/core';
@@ -75,7 +75,6 @@ export function UploadForm() {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<UppyFile<UploadMeta, RecordingBody>[]>([]);
   const [fileDates, setFileDates] = useState<Record<string, string>>({});
-  const [titleCounts, setTitleCounts] = useState<Record<string, number>>({});
   const [customTitles, setCustomTitles] = useState<Record<string, string>>({});
   const [analyzingFiles, setAnalyzingFiles] = useState<Set<string>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
@@ -83,7 +82,6 @@ export function UploadForm() {
   const [uploadResults, setUploadResults] = useState<UploadResultType[] | null>(null);
   const [polledRecordings, setPolledRecordings] = useState<Record<string, Recording>>({});
   const analyzedFilesRef = useRef<Set<string>>(new Set());
-  const fetchedDatesRef = useRef<Set<string>>(new Set());
 
   const [uppy] = useState(() => {
     const u = new Uppy<UploadMeta, RecordingBody>({
@@ -146,26 +144,6 @@ export function UploadForm() {
     };
   }, [uppy, syncFiles]);
 
-  const displayTitles = useMemo(() => {
-    const offsets: Record<string, number> = {};
-    const titles: Record<string, string> = {};
-    const today = new Date().toISOString().split('T')[0];
-
-    for (const file of files) {
-      if (customTitles[file.id]) {
-        titles[file.id] = customTitles[file.id];
-        continue;
-      }
-      const date = fileDates[file.id] ?? today;
-      const baseCount = titleCounts[date] ?? 0;
-      const offset = offsets[date] ?? 0;
-      const number = baseCount + offset + 1;
-      offsets[date] = offset + 1;
-      titles[file.id] = `Recording #${number} ${date}`;
-    }
-
-    return titles;
-  }, [files, fileDates, titleCounts, customTitles]);
 
   useEffect(() => {
     const newFiles = files.filter(f => !analyzedFilesRef.current.has(f.id));
@@ -217,40 +195,13 @@ export function UploadForm() {
   }, [files]);
 
   useEffect(() => {
-    const newDates = [...new Set(Object.values(fileDates))].filter(
-      d => !fetchedDatesRef.current.has(d),
-    );
-    if (newDates.length === 0) return;
-
-    for (const d of newDates) {
-      fetchedDatesRef.current.add(d);
-    }
-
-    const fetchCounts = async () => {
-      try {
-        const data = await apiFetch<{ counts: Record<string, number> }>(
-          '/api/recordings/title-counts',
-          {
-            method: 'POST',
-            body: JSON.stringify({ dates: newDates }),
-          },
-        );
-        setTitleCounts(prev => ({ ...prev, ...data.counts }));
-      } catch {
-      }
-    };
-
-    fetchCounts();
-  }, [fileDates]);
-
-  useEffect(() => {
     for (const file of files) {
-      const title = displayTitles[file.id];
+      const title = customTitles[file.id];
       const date = fileDates[file.id];
       if (title) uppy.setFileMeta(file.id, { title });
       if (date) uppy.setFileMeta(file.id, { recorded_at: date });
     }
-  }, [files, displayTitles, fileDates, uppy]);
+  }, [files, customTitles, fileDates, uppy]);
 
   const polledRef = useRef(polledRecordings);
   polledRef.current = polledRecordings;
@@ -355,11 +306,9 @@ export function UploadForm() {
     setUploadResults(null);
     setPolledRecordings({});
     setFileDates({});
-    setTitleCounts({});
     setCustomTitles({});
     setAnalyzingFiles(new Set());
     analyzedFilesRef.current.clear();
-    fetchedDatesRef.current.clear();
   };
 
   if (uploadResults) {
@@ -539,11 +488,9 @@ export function UploadForm() {
                 onClick={() => {
                   uppy.cancelAll();
                   setFileDates({});
-                  setTitleCounts({});
                   setCustomTitles({});
                   setAnalyzingFiles(new Set());
                   analyzedFilesRef.current.clear();
-                  fetchedDatesRef.current.clear();
                 }}
               >
                 Clear all
@@ -567,7 +514,7 @@ export function UploadForm() {
                   <div className="flex-1 min-w-0">
                     {isUploading ? (
                       <div className="font-medium text-sm truncate">
-                        {displayTitles[file.id] || file.name}
+                        {customTitles[file.id] || file.name}
                       </div>
                     ) : isAnalyzing ? (
                       <div className="flex items-center gap-2 h-7">
@@ -576,7 +523,7 @@ export function UploadForm() {
                       </div>
                     ) : (
                       <Input
-                        value={customTitles[file.id] ?? displayTitles[file.id] ?? ''}
+                        value={customTitles[file.id] ?? ''}
                         onChange={(e) => {
                           const newTitle = e.target.value;
                           if (newTitle.trim()) {
@@ -590,7 +537,7 @@ export function UploadForm() {
                           }
                         }}
                         className="h-7 text-sm font-medium border-transparent hover:border-input focus:border-input px-1 -ml-1 bg-transparent"
-                        placeholder="Enter a title"
+                        placeholder="Auto-generated title"
                       />
                     )}
                     <div className="flex items-center gap-2 mt-1">
