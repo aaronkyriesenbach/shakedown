@@ -158,7 +158,7 @@ func (h *Handler) dataDump(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = h.dumpGroupedToZip(r.Context(), zw, recMap, "songs",
-		`SELECT s.id, s.recording_id, s.title, s.start_seconds, s.end_seconds, s.notes, s.created_at
+		`SELECT s.id, s.recording_id, s.title, s.start_seconds, s.notes, s.created_at
 		 FROM songs s JOIN recordings r ON s.recording_id = r.id
 		 WHERE r.deleted_at IS NULL ORDER BY s.recording_id, s.start_seconds`)
 	_ = h.dumpGroupedToZip(r.Context(), zw, recMap, "comments",

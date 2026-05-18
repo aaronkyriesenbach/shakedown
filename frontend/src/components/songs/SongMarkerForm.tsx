@@ -19,7 +19,6 @@ export function SongMarkerForm({ recordingId, song, currentTime, onClose }: Song
   const [startSeconds, setStartSeconds] = useState(
     song?.start_seconds?.toString() ?? (currentTime !== undefined ? currentTime.toFixed(0) : '0')
   );
-  const [endSeconds, setEndSeconds] = useState(song?.end_seconds?.toString() ?? '');
   const [notes, setNotes] = useState(song?.notes ?? '');
 
   const createMutation = useCreateSong(recordingId);
@@ -39,21 +38,11 @@ export function SongMarkerForm({ recordingId, song, currentTime, onClose }: Song
       return;
     }
     
-    let end: number | undefined = undefined;
-    if (endSeconds.trim()) {
-      end = parseInt(endSeconds, 10);
-      if (isNaN(end) || end <= start) {
-        toast.error('End time must be a number greater than start time');
-        return;
-      }
-    }
-    
     if (isEditing) {
       updateMutation.mutate(
         {
           title: title.trim(),
           start_seconds: start,
-          end_seconds: end ?? null,
           notes: notes.trim() || null,
         },
         {
@@ -71,7 +60,6 @@ export function SongMarkerForm({ recordingId, song, currentTime, onClose }: Song
         {
           title: title.trim(),
           start_seconds: start,
-          end_seconds: end,
           notes: notes.trim() || undefined,
         },
         {
@@ -102,54 +90,27 @@ export function SongMarkerForm({ recordingId, song, currentTime, onClose }: Song
         />
       </div>
       
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="start">Start (seconds) *</Label>
-          <div className="relative">
-            <Input 
-              id="start" 
-              type="number" 
-              step="1"
-              min="0"
-              value={startSeconds} 
-              onChange={(e) => setStartSeconds(e.target.value)}
-              className={currentTime !== undefined ? 'pr-20' : ''}
-            />
-            {currentTime !== undefined && (
-              <button
-                type="button"
-                onClick={() => setStartSeconds(currentTime.toFixed(0))}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-primary hover:underline"
-              >
-                Use current
-              </button>
-            )}
-          </div>
-        </div>
-        
-        <div className="space-y-1.5">
-          <Label htmlFor="end">End (seconds)</Label>
-          <div className="relative">
-            <Input 
-              id="end" 
-              type="number" 
-              step="1"
-              min="0"
-              value={endSeconds} 
-              onChange={(e) => setEndSeconds(e.target.value)} 
-              placeholder="Optional"
-              className={currentTime !== undefined ? 'pr-20' : ''}
-            />
-            {currentTime !== undefined && (
-              <button
-                type="button"
-                onClick={() => setEndSeconds(currentTime.toFixed(0))}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-primary hover:underline"
-              >
-                Use current
-              </button>
-            )}
-          </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="start">Start (seconds) *</Label>
+        <div className="relative">
+          <Input 
+            id="start" 
+            type="number" 
+            step="1"
+            min="0"
+            value={startSeconds} 
+            onChange={(e) => setStartSeconds(e.target.value)}
+            className={currentTime !== undefined ? 'pr-20' : ''}
+          />
+          {currentTime !== undefined && (
+            <button
+              type="button"
+              onClick={() => setStartSeconds(currentTime.toFixed(0))}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-primary hover:underline"
+            >
+              Use current
+            </button>
+          )}
         </div>
       </div>
       
