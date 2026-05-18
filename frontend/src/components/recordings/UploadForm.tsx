@@ -506,6 +506,7 @@ export function UploadForm() {
             <Button
               type="button"
               variant="secondary"
+              size="sm"
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploading}
             >
@@ -515,6 +516,7 @@ export function UploadForm() {
             <Button
               type="button"
               variant="secondary"
+              size="sm"
               onClick={() => folderInputRef.current?.click()}
               disabled={isUploading}
             >
