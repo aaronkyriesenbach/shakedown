@@ -120,6 +120,37 @@ func (repo *Repository) NextTitleNumber(ctx context.Context, date time.Time) (in
 	return count + 1, nil
 }
 
+// TitleCountsByDate returns the count of existing recordings for each given date.
+func (repo *Repository) TitleCountsByDate(ctx context.Context, dates []time.Time) (map[string]int, error) {
+	if len(dates) == 0 {
+		return map[string]int{}, nil
+	}
+
+	rows, err := repo.db.Query(ctx,
+		`SELECT CAST(recorded_at AT TIME ZONE 'UTC' AS date) AS d, COUNT(*)
+		 FROM recordings
+		 WHERE deleted_at IS NULL
+		   AND CAST(recorded_at AT TIME ZONE 'UTC' AS date) = ANY($1::date[])
+		 GROUP BY d`,
+		dates,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("recordings: title counts by date: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int, len(dates))
+	for rows.Next() {
+		var d time.Time
+		var count int
+		if err := rows.Scan(&d, &count); err != nil {
+			return nil, fmt.Errorf("recordings: scan title count row: %w", err)
+		}
+		counts[d.Format("2006-01-02")] = count
+	}
+	return counts, rows.Err()
+}
+
 // createWithAutoTitle generates a unique sequential title inside a transaction
 // guarded by a PostgreSQL advisory lock, then inserts the recording.
 func (repo *Repository) createWithAutoTitle(ctx context.Context, id string, input CreateRecordingInput) (*Recording, error) {
