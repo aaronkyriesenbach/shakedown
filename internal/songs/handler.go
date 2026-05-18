@@ -31,14 +31,12 @@ func (h *Handler) Routes(r chi.Router) {
 type createSongRequest struct {
 	Title        string  `json:"title"`
 	StartSeconds int     `json:"start_seconds"`
-	EndSeconds   *int    `json:"end_seconds"`
 	Notes        *string `json:"notes"`
 }
 
 type updateSongRequest struct {
 	Title        string  `json:"title"`
 	StartSeconds int     `json:"start_seconds"`
-	EndSeconds   *int    `json:"end_seconds"`
 	Notes        *string `json:"notes"`
 }
 
@@ -75,12 +73,8 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"title is required"}`, http.StatusBadRequest)
 		return
 	}
-	if req.EndSeconds != nil && *req.EndSeconds <= req.StartSeconds {
-		http.Error(w, `{"error":"end_seconds must be greater than start_seconds"}`, http.StatusBadRequest)
-		return
-	}
 
-	song, err := h.repo.Create(r.Context(), recordingID, user.ID, req.Title, req.StartSeconds, req.EndSeconds, req.Notes)
+	song, err := h.repo.Create(r.Context(), recordingID, user.ID, req.Title, req.StartSeconds, req.Notes)
 	if err != nil {
 		h.logger.Error("failed to create song", zap.Error(err))
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -100,12 +94,8 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
 	}
-	if req.EndSeconds != nil && *req.EndSeconds <= req.StartSeconds {
-		http.Error(w, `{"error":"end_seconds must be greater than start_seconds"}`, http.StatusBadRequest)
-		return
-	}
 
-	song, err := h.repo.Update(r.Context(), songID, req.Title, req.StartSeconds, req.EndSeconds, req.Notes)
+	song, err := h.repo.Update(r.Context(), songID, req.Title, req.StartSeconds, req.Notes)
 	if err != nil {
 		h.logger.Error("failed to update song", zap.Error(err))
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)

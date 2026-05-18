@@ -85,9 +85,10 @@ export function SongMarkerList({ recordingId, onSeek, currentTime = 0 }: SongMar
         )
       ) : (
         <div className="space-y-2">
-          {sortedSongs.map((song) => {
-            const isActive = currentTime >= song.start_seconds && 
-              (song.end_seconds == null || currentTime < song.end_seconds);
+          {sortedSongs.map((song, index) => {
+            const nextSong = sortedSongs[index + 1];
+            const isActive = currentTime >= song.start_seconds &&
+              (nextSong == null || currentTime < nextSong.start_seconds);
               
             if (editingId === song.id) {
               return (
@@ -103,11 +104,12 @@ export function SongMarkerList({ recordingId, onSeek, currentTime = 0 }: SongMar
             }
 
             return (
-              <div 
+              <button 
+                type="button"
                 key={song.id}
                 onClick={() => onSeek?.(song.start_seconds)}
                 className={cn(
-                  "group flex flex-col p-3 rounded-md border transition-colors cursor-pointer relative overflow-hidden",
+                  "group flex flex-col w-full text-left p-3 rounded-md border transition-colors cursor-pointer relative overflow-hidden",
                   isActive 
                     ? "bg-violet-500/10 border-violet-500/30" 
                     : "bg-card hover:bg-muted/50 border-border"
@@ -134,12 +136,11 @@ export function SongMarkerList({ recordingId, onSeek, currentTime = 0 }: SongMar
                       <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                         <Clock className="w-3 h-3" />
                         {formatDuration(song.start_seconds)}
-                        {song.end_seconds != null && ` - ${formatDuration(song.end_seconds)}`}
                       </div>
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity">
                     <Button 
                       variant="ghost" 
                       size="icon" 
@@ -167,7 +168,7 @@ export function SongMarkerList({ recordingId, onSeek, currentTime = 0 }: SongMar
                     {song.notes}
                   </div>
                 )}
-              </div>
+              </button>
             );
           })}
         </div>

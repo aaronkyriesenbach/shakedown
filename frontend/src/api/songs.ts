@@ -6,7 +6,6 @@ export interface Song {
   recording_id: string;
   title: string;
   start_seconds: number;
-  end_seconds?: number;
   notes?: string;
   created_by: string;
   created_at: string;
@@ -16,14 +15,12 @@ export interface Song {
 export interface CreateSongInput {
   title: string;
   start_seconds: number;
-  end_seconds?: number;
   notes?: string;
 }
 
 export interface UpdateSongInput {
   title?: string;
   start_seconds?: number;
-  end_seconds?: number | null;
   notes?: string | null;
 }
 
