@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/api/client';
 
 export type ProcessingStep =
@@ -79,21 +79,25 @@ export const recordingKeys = {
   detail: (id: string) => ['recordings', 'detail', id] as const,
 };
 
-export function useRecordings(filter: ListFilter = {}) {
-  return useQuery({
-    queryKey: recordingKeys.list(filter),
-    queryFn: () => {
+export function useInfiniteRecordings(filter: ListFilter = {}) {
+  return useInfiniteQuery({
+    queryKey: [...recordingKeys.lists(), 'infinite', filter] as const,
+    queryFn: ({ pageParam = 1 }) => {
       const params = new URLSearchParams();
       if (filter.search) params.set('search', filter.search);
       if (filter.tag) params.set('tag', filter.tag);
       if (filter.from) params.set('from', filter.from);
       if (filter.to) params.set('to', filter.to);
-      if (filter.page) params.set('page', filter.page.toString());
       if (filter.limit) params.set('limit', filter.limit.toString());
-      
-      const qs = params.toString();
-      const path = qs ? `/api/recordings?${qs}` : '/api/recordings';
-      return apiFetch<ListResult<Recording>>(path);
+      params.set('page', pageParam.toString());
+
+      return apiFetch<ListResult<Recording>>(`/api/recordings?${params.toString()}`);
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const loaded = lastPage.page * lastPage.limit;
+      if (loaded >= lastPage.total) return undefined;
+      return lastPage.page + 1;
     },
   });
 }

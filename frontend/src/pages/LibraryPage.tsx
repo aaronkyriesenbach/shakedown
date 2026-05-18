@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Upload, Search, Calendar, SlidersHorizontal } from 'lucide-react';
-import { useRecordings, type ListFilter } from '@/api/recordings';
+import { useInfiniteRecordings, type ListFilter } from '@/api/recordings';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TagFilter } from '@/components/tags/TagFilter';
@@ -49,8 +49,8 @@ export function LibraryPage() {
     });
   }, []);
 
-  const { data } = useRecordings(filter);
-  const totalCount = data?.total || 0;
+  const { data } = useInfiniteRecordings(filter);
+  const totalCount = data?.pages[0]?.total ?? 0;
 
   return (
     <div className="container max-w-5xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">

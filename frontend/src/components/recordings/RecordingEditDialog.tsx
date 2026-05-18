@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTags, useAttachTag, useDetachTag } from '@/api/tags';
 import { useUpdateRecording, type Recording } from '@/api/recordings';
+import { ApiError } from '@/api/client';
 import {
   Dialog,
   DialogContent,
@@ -62,8 +63,11 @@ export function RecordingEditDialog({
           toast.success('Recording updated');
           onOpenChange(false);
         },
-        onError: () => {
-          toast.error('Failed to update recording');
+        onError: (err) => {
+          const message = err instanceof ApiError
+            ? err.userMessage
+            : 'Failed to update recording';
+          toast.error(message);
         },
       }
     );

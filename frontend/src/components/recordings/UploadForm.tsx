@@ -1,16 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Uppy, { type Meta, type Body } from '@uppy/core';
 import type { UploadResult, UppyFile } from '@uppy/core';
 import XHRUpload from '@uppy/xhr-upload';
 import { toast } from 'sonner';
-import { Upload, X, Music, Loader2, CheckCircle2, AlertCircle, RefreshCw, FolderOpen } from 'lucide-react';
+import { Upload, X, Music, Loader2, CheckCircle2, AlertCircle, RefreshCw, FolderOpen, ChevronDown } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { formatFileSize } from '@/lib/format';
-import { extractRecordingDate } from '@/lib/metadata';
+import { extractRecordingDateInfo } from '@/lib/metadata';
+import { cn } from '@/lib/utils';
 import { apiFetch } from '@/api/client';
 import type { Recording } from '@/api/recordings';
 
@@ -75,6 +76,7 @@ export function UploadForm() {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<UppyFile<UploadMeta, RecordingBody>[]>([]);
   const [fileDates, setFileDates] = useState<Record<string, string>>({});
+  const [fileTimestamps, setFileTimestamps] = useState<Record<string, string | null>>({});
   const [customTitles, setCustomTitles] = useState<Record<string, string>>({});
   const [analyzingFiles, setAnalyzingFiles] = useState<Set<string>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
@@ -161,15 +163,18 @@ export function UploadForm() {
       });
 
       const extractedDates: Record<string, string> = {};
+      const extractedTimestamps: Record<string, string | null> = {};
       const today = new Date().toISOString().split('T')[0];
 
       await Promise.all(
         newFiles.map(async (file) => {
           try {
-            const date = await extractRecordingDate(file.data as File);
-            extractedDates[file.id] = date ?? today;
+            const info = await extractRecordingDateInfo(file.data as File);
+            extractedDates[file.id] = info?.date ?? today;
+            extractedTimestamps[file.id] = info?.timestamp ?? null;
           } catch {
             extractedDates[file.id] = today;
+            extractedTimestamps[file.id] = null;
           }
         }),
       );
@@ -179,6 +184,16 @@ export function UploadForm() {
         for (const [id, date] of Object.entries(extractedDates)) {
           if (merged[id] === undefined) {
             merged[id] = date;
+          }
+        }
+        return merged;
+      });
+
+      setFileTimestamps(prev => {
+        const merged = { ...prev };
+        for (const [id, ts] of Object.entries(extractedTimestamps)) {
+          if (merged[id] === undefined) {
+            merged[id] = ts;
           }
         }
         return merged;
@@ -306,6 +321,7 @@ export function UploadForm() {
     setUploadResults(null);
     setPolledRecordings({});
     setFileDates({});
+    setFileTimestamps({});
     setCustomTitles({});
     setAnalyzingFiles(new Set());
     analyzedFilesRef.current.clear();
@@ -488,6 +504,7 @@ export function UploadForm() {
                 onClick={() => {
                   uppy.cancelAll();
                   setFileDates({});
+                  setFileTimestamps({});
                   setCustomTitles({});
                   setAnalyzingFiles(new Set());
                   analyzedFilesRef.current.clear();
@@ -498,120 +515,76 @@ export function UploadForm() {
             )}
           </div>
           
-          <div className="space-y-2">
-            {files.map((file) => {
-              const isAnalyzing = analyzingFiles.has(file.id);
-
-              return (
-                <div
-                  key={file.id}
-                  className="flex items-center gap-3 p-3 bg-card border rounded-lg group relative"
-                >
-                  <div className="bg-muted w-10 h-10 rounded-md flex items-center justify-center shrink-0">
-                    <Music className="w-5 h-5 text-muted-foreground" />
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    {isUploading ? (
-                      <div className="font-medium text-sm truncate">
-                        {customTitles[file.id] || file.name}
-                      </div>
-                    ) : isAnalyzing ? (
-                      <div className="flex items-center gap-2 h-7">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">Analyzing...</span>
-                      </div>
-                    ) : (
-                      <Input
-                        value={customTitles[file.id] ?? ''}
-                        onChange={(e) => {
-                          const newTitle = e.target.value;
-                          if (newTitle.trim()) {
-                            setCustomTitles(prev => ({ ...prev, [file.id]: newTitle }));
-                          } else {
-                            setCustomTitles(prev => {
-                              const next = { ...prev };
-                              delete next[file.id];
-                              return next;
-                            });
-                          }
-                        }}
-                        className="h-7 text-sm font-medium border-transparent hover:border-input focus:border-input px-1 -ml-1 bg-transparent"
-                        placeholder="Auto-generated title"
-                      />
-                    )}
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-muted-foreground truncate">
-                        {file.name}
-                      </span>
-                      <span className="text-xs text-muted-foreground">·</span>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatFileSize(file.size ?? 0)}
-                      </span>
-                      {isUploading && file.progress && (
-                        <span className="text-xs text-primary font-medium">
-                          {file.progress.percentage}%
-                        </span>
-                      )}
-                    </div>
-                    {!isUploading && !isAnalyzing && (
-                      <div className="flex items-center gap-2 mt-1">
-                        <Input
-                          type="date"
-                          value={fileDates[file.id] || ''}
-                          onChange={(e) => {
-                            setFileDates(prev => ({ ...prev, [file.id]: e.target.value }));
-                          }}
-                          className="h-7 w-auto text-xs border-transparent hover:border-input focus:border-input px-1 -ml-1 bg-transparent"
-                        />
-                        {fileDates[file.id] && fileDates[file.id] !== new Date().toISOString().split('T')[0] && (
-                          <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md">
-                            from metadata
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {!isUploading && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-1/2 -translate-y-1/2"
-                      onClick={() => {
-                        uppy.removeFile(file.id);
-                        setCustomTitles(prev => {
-                          const next = { ...prev };
-                          delete next[file.id];
-                          return next;
-                        });
-                        setFileDates(prev => {
-                          const next = { ...prev };
-                          delete next[file.id];
-                          return next;
-                        });
-                        analyzedFilesRef.current.delete(file.id);
-                      }}
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
-                  )}
-
-                  {isUploading && file.progress && (
-                    <div 
-                      className="absolute bottom-0 left-0 h-1 bg-primary rounded-b-lg transition-all duration-300"
-                      style={{ width: `${file.progress.percentage}%` }}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <GroupedFileList
+            files={files}
+            fileDates={fileDates}
+            fileTimestamps={fileTimestamps}
+            customTitles={customTitles}
+            analyzingFiles={analyzingFiles}
+            isUploading={isUploading}
+            onTitleChange={(fileId, title) => {
+              if (title.trim()) {
+                setCustomTitles(prev => ({ ...prev, [fileId]: title }));
+              } else {
+                setCustomTitles(prev => {
+                  const next = { ...prev };
+                  delete next[fileId];
+                  return next;
+                });
+              }
+            }}
+            onDateChange={(fileId, date) => {
+              setFileDates(prev => ({ ...prev, [fileId]: date }));
+            }}
+            onRemoveFile={(fileId) => {
+              uppy.removeFile(fileId);
+              setCustomTitles(prev => {
+                const next = { ...prev };
+                delete next[fileId];
+                return next;
+              });
+              setFileDates(prev => {
+                const next = { ...prev };
+                delete next[fileId];
+                return next;
+              });
+              setFileTimestamps(prev => {
+                const next = { ...prev };
+                delete next[fileId];
+                return next;
+              });
+              analyzedFilesRef.current.delete(fileId);
+            }}
+          />
 
           <Button
             className="w-full"
             size="lg"
-            onClick={() => uppy.upload()}
+            onClick={() => {
+              const sortedIds = getSortedFileIds(files, fileDates, fileTimestamps);
+              const currentIds = uppy.getFiles().map(f => f.id);
+              const needsReorder = sortedIds.join(',') !== currentIds.join(',');
+              
+              if (needsReorder) {
+                const fileDataMap = new Map(
+                  uppy.getFiles().map(f => [f.id, f]),
+                );
+                uppy.cancelAll();
+                for (const id of sortedIds) {
+                  const f = fileDataMap.get(id);
+                  if (!f?.data) continue;
+                  const data = f.data as File | Blob;
+                  uppy.addFile({
+                    name: f.name,
+                    type: f.type,
+                    data,
+                    source: f.source,
+                    meta: f.meta,
+                  });
+                }
+              }
+              uppy.upload();
+            }}
             disabled={isUploading || analyzingFiles.size > 0}
           >
             {isUploading ? (
@@ -632,6 +605,337 @@ export function UploadForm() {
             )}
           </Button>
         </div>
+      )}
+    </div>
+  );
+}
+
+interface DayGroup {
+  dateKey: string;
+  label: string;
+  fileIds: string[];
+}
+
+function getSortedFileIds(
+  files: UppyFile<UploadMeta, RecordingBody>[],
+  fileDates: Record<string, string>,
+  fileTimestamps: Record<string, string | null>,
+): string[] {
+  const groups = groupFilesByDate(files, fileDates);
+  const sorted: string[] = [];
+
+  for (const group of groups) {
+    const sortedWithinGroup = [...group.fileIds].sort((a, b) => {
+      const tsA = fileTimestamps[a];
+      const tsB = fileTimestamps[b];
+      if (tsA && tsB) return tsA.localeCompare(tsB);
+      if (tsA) return -1;
+      if (tsB) return 1;
+      const fileA = files.find(f => f.id === a);
+      const fileB = files.find(f => f.id === b);
+      return (fileA?.name ?? '').localeCompare(fileB?.name ?? '');
+    });
+    sorted.push(...sortedWithinGroup);
+  }
+
+  return sorted;
+}
+
+function groupFilesByDate(
+  files: UppyFile<UploadMeta, RecordingBody>[],
+  fileDates: Record<string, string>,
+): DayGroup[] {
+  const dayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const groups: Record<string, DayGroup> = {};
+
+  for (const file of files) {
+    const dateKey = fileDates[file.id] || 'unknown';
+    if (!groups[dateKey]) {
+      const label = dateKey === 'unknown'
+        ? 'Unknown Date'
+        : dayFmt.format(new Date(dateKey + 'T12:00:00'));
+      groups[dateKey] = { dateKey, label, fileIds: [] };
+    }
+    groups[dateKey].fileIds.push(file.id);
+  }
+
+  return Object.values(groups).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+}
+
+interface GroupedFileListProps {
+  files: UppyFile<UploadMeta, RecordingBody>[];
+  fileDates: Record<string, string>;
+  fileTimestamps: Record<string, string | null>;
+  customTitles: Record<string, string>;
+  analyzingFiles: Set<string>;
+  isUploading: boolean;
+  onTitleChange: (fileId: string, title: string) => void;
+  onDateChange: (fileId: string, date: string) => void;
+  onRemoveFile: (fileId: string) => void;
+}
+
+function GroupedFileList({
+  files,
+  fileDates,
+  fileTimestamps,
+  customTitles,
+  analyzingFiles,
+  isUploading,
+  onTitleChange,
+  onDateChange,
+  onRemoveFile,
+}: GroupedFileListProps) {
+  const groups = useMemo(
+    () => groupFilesByDate(files, fileDates),
+    [files, fileDates],
+  );
+
+  const sortedGroups = useMemo(() => {
+    return groups.map(group => ({
+      ...group,
+      fileIds: [...group.fileIds].sort((a, b) => {
+        const tsA = fileTimestamps[a];
+        const tsB = fileTimestamps[b];
+        if (tsA && tsB) return tsA.localeCompare(tsB);
+        if (tsA) return -1;
+        if (tsB) return 1;
+        const fileA = files.find(f => f.id === a);
+        const fileB = files.find(f => f.id === b);
+        return (fileA?.name ?? '').localeCompare(fileB?.name ?? '');
+      }),
+    }));
+  }, [groups, fileTimestamps, files]);
+
+  const hasMultipleDates = groups.length > 1;
+  const allAnalyzing = files.every(f => analyzingFiles.has(f.id));
+
+  if (allAnalyzing || Object.keys(fileDates).length === 0) {
+    return (
+      <div className="space-y-2">
+        {files.map((file) => (
+          <FileRow
+            key={file.id}
+            file={file}
+            fileDates={fileDates}
+            customTitles={customTitles}
+            analyzingFiles={analyzingFiles}
+            isUploading={isUploading}
+            onTitleChange={onTitleChange}
+            onDateChange={onDateChange}
+            onRemoveFile={onRemoveFile}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (!hasMultipleDates) {
+    const group = sortedGroups[0];
+    return (
+      <div className="space-y-2">
+        {group.fileIds.map((fileId) => {
+          const file = files.find(f => f.id === fileId);
+          if (!file) return null;
+          return (
+            <FileRow
+              key={file.id}
+              file={file}
+              fileDates={fileDates}
+              customTitles={customTitles}
+              analyzingFiles={analyzingFiles}
+              isUploading={isUploading}
+              onTitleChange={onTitleChange}
+              onDateChange={onDateChange}
+              onRemoveFile={onRemoveFile}
+            />
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {sortedGroups.map((group) => (
+        <DayDropdown
+          key={group.dateKey}
+          group={group}
+          files={files}
+          fileDates={fileDates}
+          customTitles={customTitles}
+          analyzingFiles={analyzingFiles}
+          isUploading={isUploading}
+          onTitleChange={onTitleChange}
+          onDateChange={onDateChange}
+          onRemoveFile={onRemoveFile}
+        />
+      ))}
+    </div>
+  );
+}
+
+interface DayDropdownProps {
+  group: DayGroup;
+  files: UppyFile<UploadMeta, RecordingBody>[];
+  fileDates: Record<string, string>;
+  customTitles: Record<string, string>;
+  analyzingFiles: Set<string>;
+  isUploading: boolean;
+  onTitleChange: (fileId: string, title: string) => void;
+  onDateChange: (fileId: string, date: string) => void;
+  onRemoveFile: (fileId: string) => void;
+}
+
+function DayDropdown({
+  group,
+  files,
+  fileDates,
+  customTitles,
+  analyzingFiles,
+  isUploading,
+  onTitleChange,
+  onDateChange,
+  onRemoveFile,
+}: DayDropdownProps) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div className="rounded-lg border bg-card/50">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium hover:bg-muted/50 transition-colors rounded-lg"
+      >
+        <ChevronDown
+          className={cn(
+            'w-4 h-4 text-muted-foreground transition-transform duration-200',
+            !open && '-rotate-90',
+          )}
+        />
+        <span className="text-base font-semibold">{group.label}</span>
+        <span className="text-xs text-muted-foreground ml-auto">
+          {group.fileIds.length} {group.fileIds.length === 1 ? 'file' : 'files'}
+        </span>
+      </button>
+      {open && (
+        <div className="space-y-2 px-3 pb-3">
+          {group.fileIds.map((fileId) => {
+            const file = files.find(f => f.id === fileId);
+            if (!file) return null;
+            return (
+              <FileRow
+                key={file.id}
+                file={file}
+                fileDates={fileDates}
+                customTitles={customTitles}
+                analyzingFiles={analyzingFiles}
+                isUploading={isUploading}
+                onTitleChange={onTitleChange}
+                onDateChange={onDateChange}
+                onRemoveFile={onRemoveFile}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface FileRowProps {
+  file: UppyFile<UploadMeta, RecordingBody>;
+  fileDates: Record<string, string>;
+  customTitles: Record<string, string>;
+  analyzingFiles: Set<string>;
+  isUploading: boolean;
+  onTitleChange: (fileId: string, title: string) => void;
+  onDateChange: (fileId: string, date: string) => void;
+  onRemoveFile: (fileId: string) => void;
+}
+
+function FileRow({
+  file,
+  fileDates,
+  customTitles,
+  analyzingFiles,
+  isUploading,
+  onTitleChange,
+  onDateChange,
+  onRemoveFile,
+}: FileRowProps) {
+  const isAnalyzing = analyzingFiles.has(file.id);
+
+  return (
+    <div className="flex items-center gap-3 p-3 bg-card border rounded-lg group relative">
+      <div className="bg-muted w-10 h-10 rounded-md flex items-center justify-center shrink-0">
+        <Music className="w-5 h-5 text-muted-foreground" />
+      </div>
+      
+      <div className="flex-1 min-w-0">
+        {isUploading ? (
+          <div className="font-medium text-sm truncate">
+            {customTitles[file.id] || file.name}
+          </div>
+        ) : isAnalyzing ? (
+          <div className="flex items-center gap-2 h-7">
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Analyzing...</span>
+          </div>
+        ) : (
+          <Input
+            value={customTitles[file.id] ?? ''}
+            onChange={(e) => onTitleChange(file.id, e.target.value)}
+            className="h-7 text-sm font-medium border-transparent hover:border-input focus:border-input px-1 -ml-1 bg-transparent"
+            placeholder="Auto-generated title"
+          />
+        )}
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-xs text-muted-foreground truncate">
+            {file.name}
+          </span>
+          <span className="text-xs text-muted-foreground">·</span>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            {formatFileSize(file.size ?? 0)}
+          </span>
+          {isUploading && file.progress && (
+            <span className="text-xs text-primary font-medium">
+              {file.progress.percentage}%
+            </span>
+          )}
+        </div>
+        {!isUploading && !isAnalyzing && (
+          <div className="flex items-center gap-2 mt-1">
+            <Input
+              type="date"
+              value={fileDates[file.id] || ''}
+              onChange={(e) => onDateChange(file.id, e.target.value)}
+              className="h-7 w-auto text-xs border-transparent hover:border-input focus:border-input px-1 -ml-1 bg-transparent"
+            />
+            {fileDates[file.id] && fileDates[file.id] !== new Date().toISOString().split('T')[0] && (
+              <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md">
+                from metadata
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {!isUploading && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-1/2 -translate-y-1/2"
+          onClick={() => onRemoveFile(file.id)}
+        >
+          <X className="w-4 h-4" />
+        </Button>
+      )}
+
+      {isUploading && file.progress && (
+        <div 
+          className="absolute bottom-0 left-0 h-1 bg-primary rounded-b-lg transition-all duration-300"
+          style={{ width: `${file.progress.percentage}%` }}
+        />
       )}
     </div>
   );
