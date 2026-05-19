@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, type RefObject } from 'react';
 import WaveSurfer from 'wavesurfer.js';
+import { safeSeek } from '@/lib/media';
 
 export interface UseAudioPlayerProps {
   containerRef: RefObject<HTMLElement | null>;
@@ -108,10 +109,7 @@ export function useAudioPlayer({
     const needsInitialPlayback = (initialTime !== undefined && initialTime > 0) || autoPlay;
     const handleCanPlay = needsInitialPlayback ? () => {
       if (initialTime !== undefined && initialTime > 0) {
-        const totalDuration = ws.getDuration();
-        if (totalDuration > 0) {
-          ws.seekTo(Math.min(initialTime / totalDuration, 1));
-        }
+        safeSeek(ws.getMediaElement(), Math.min(initialTime, ws.getDuration()));
       }
       if (autoPlay) {
         ws.play();
@@ -145,27 +143,66 @@ export function useAudioPlayer({
       }
       ws.destroy();
       wavesurferRef.current = null;
+      isWarmedUpRef.current = false;
     };
   }, [containerRef, audioUrl, peaksLoaded, peaks, initialDuration, initialTime, autoPlay, onTimeUpdate, onSeek]);
 
+  // iOS Safari: the <audio> element ignores currentTime until activated by
+  // play(). We call play()→pause() on the underlying element during the first
+  // user-gesture seek to force activation without audible output. (#3896)
+  const pendingSeekRef = useRef<number | null>(null);
+  const isWarmedUpRef = useRef(false);
+
   const togglePlay = useCallback(() => {
-    if (wavesurferRef.current) {
-      wavesurferRef.current.playPause();
+    const ws = wavesurferRef.current;
+    if (!ws) return;
+
+    if (ws.isPlaying()) {
+      ws.pause();
+      return;
     }
-  }, []);
+
+    if (pendingSeekRef.current !== null) {
+      const target = pendingSeekRef.current;
+      const totalDuration = ws.getDuration() || duration;
+      pendingSeekRef.current = null;
+      ws.seekTo(target / totalDuration);
+      void ws.play();
+    } else {
+      ws.playPause();
+    }
+  }, [duration]);
 
   const seek = useCallback((fraction: number) => {
-    if (wavesurferRef.current) {
-      wavesurferRef.current.seekTo(Math.max(0, Math.min(1, fraction)));
+    const ws = wavesurferRef.current;
+    if (!ws) return;
+    const clamped = Math.max(0, Math.min(1, fraction));
+    ws.seekTo(clamped);
+    if (!ws.isPlaying()) {
+      pendingSeekRef.current = clamped * (ws.getDuration() || duration);
     }
-  }, []);
+  }, [duration]);
   
   const seekToTime = useCallback((seconds: number) => {
-    if (wavesurferRef.current) {
-      const totalDuration = wavesurferRef.current.getDuration() || duration;
-      if (totalDuration > 0) {
-        wavesurferRef.current.seekTo(Math.max(0, Math.min(1, seconds / totalDuration)));
-      }
+    const ws = wavesurferRef.current;
+    if (!ws) return;
+    const totalDuration = ws.getDuration() || duration;
+    if (totalDuration <= 0) return;
+
+    if (!isWarmedUpRef.current && !ws.isPlaying()) {
+      const mediaEl = ws.getMediaElement();
+      const prevVolume = mediaEl.volume;
+      mediaEl.volume = 0;
+      void mediaEl.play().catch(() => {});
+      mediaEl.pause();
+      mediaEl.volume = prevVolume;
+      isWarmedUpRef.current = true;
+    }
+
+    const clamped = Math.max(0, Math.min(seconds, totalDuration));
+    ws.seekTo(clamped / totalDuration);
+    if (!ws.isPlaying()) {
+      pendingSeekRef.current = clamped;
     }
   }, [duration]);
 

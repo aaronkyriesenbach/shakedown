@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect, type RefObject } from 'react';
+import { useState, useCallback, useEffect, useRef, type RefObject } from 'react';
+import { safeSeek } from '@/lib/media';
 
 export interface UseVideoPlayerProps {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -26,23 +27,47 @@ export function useVideoPlayer({ videoRef, initialTime, autoPlay, onTimeUpdate, 
   const [duration, setDuration] = useState(0);
   const [isReady, setIsReady] = useState(false);
   const [volume, setVolumeState] = useState(1);
+  const pendingSeekRef = useRef<number | null>(null);
+  const isWarmedUpRef = useRef(false);
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    if (video.paused) {
+
+    if (!video.paused) {
+      video.pause();
+      return;
+    }
+
+    if (pendingSeekRef.current !== null) {
+      const target = pendingSeekRef.current;
+      pendingSeekRef.current = null;
+      video.currentTime = target;
       void video.play();
     } else {
-      video.pause();
+      void video.play();
     }
   }, [videoRef]);
 
   const seekToTime = useCallback((seconds: number) => {
     const video = videoRef.current;
     if (!video) return;
+
+    if (!isWarmedUpRef.current && video.paused) {
+      const prevVolume = video.volume;
+      video.volume = 0;
+      void video.play().catch(() => {});
+      video.pause();
+      video.volume = prevVolume;
+      isWarmedUpRef.current = true;
+    }
+
     const clamped = Math.max(0, Math.min(seconds, video.duration || 0));
-    video.currentTime = clamped;
+    safeSeek(video, clamped);
     onSeek?.(clamped);
+    if (video.paused) {
+      pendingSeekRef.current = clamped;
+    }
   }, [videoRef, onSeek]);
 
   const seek = useCallback((fraction: number) => {
@@ -66,7 +91,7 @@ export function useVideoPlayer({ videoRef, initialTime, autoPlay, onTimeUpdate, 
       setDuration(video.duration);
       setIsReady(true);
       if (initialTime && initialTime > 0) {
-        video.currentTime = Math.min(initialTime, video.duration);
+        safeSeek(video, Math.min(initialTime, video.duration));
       }
       if (autoPlay) {
         void video.play();
