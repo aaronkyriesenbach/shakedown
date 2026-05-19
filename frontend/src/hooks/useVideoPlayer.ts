@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useRef, type RefObject } from 'react';
-import { safeSeek } from '@/lib/media';
 
 export interface UseVideoPlayerProps {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -27,7 +26,6 @@ export function useVideoPlayer({ videoRef, initialTime, autoPlay, onTimeUpdate, 
   const [duration, setDuration] = useState(0);
   const [isReady, setIsReady] = useState(false);
   const [volume, setVolumeState] = useState(1);
-  const pendingSeekRef = useRef<number | null>(null);
   const isWarmedUpRef = useRef(false);
 
   const togglePlay = useCallback(() => {
@@ -36,14 +34,6 @@ export function useVideoPlayer({ videoRef, initialTime, autoPlay, onTimeUpdate, 
 
     if (!video.paused) {
       video.pause();
-      return;
-    }
-
-    if (pendingSeekRef.current !== null) {
-      const target = pendingSeekRef.current;
-      pendingSeekRef.current = null;
-      video.currentTime = target;
-      void video.play();
     } else {
       void video.play();
     }
@@ -63,11 +53,8 @@ export function useVideoPlayer({ videoRef, initialTime, autoPlay, onTimeUpdate, 
     }
 
     const clamped = Math.max(0, Math.min(seconds, video.duration || 0));
-    safeSeek(video, clamped);
+    video.currentTime = clamped;
     onSeek?.(clamped);
-    if (video.paused) {
-      pendingSeekRef.current = clamped;
-    }
   }, [videoRef, onSeek]);
 
   const seek = useCallback((fraction: number) => {
@@ -91,7 +78,7 @@ export function useVideoPlayer({ videoRef, initialTime, autoPlay, onTimeUpdate, 
       setDuration(video.duration);
       setIsReady(true);
       if (initialTime && initialTime > 0) {
-        safeSeek(video, Math.min(initialTime, video.duration));
+        video.currentTime = Math.min(initialTime, video.duration);
       }
       if (autoPlay) {
         void video.play();
