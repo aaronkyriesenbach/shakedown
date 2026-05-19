@@ -4,6 +4,7 @@ import { Download, Loader2, Calendar, Clock, Music } from 'lucide-react';
 import { useShare, shareStreamUrl, shareAudioStreamUrl, shareWaveformUrl, shareDownloadUrl } from '@/api/shares';
 import { WaveformPlayer, type WaveformPlayerRef } from '@/components/audio/WaveformPlayer';
 import { VideoPlayer, type VideoPlayerRef } from '@/components/video/VideoPlayer';
+import { SongMarkerList } from '@/components/songs/SongMarkerList';
 import { formatDuration, formatDate } from '@/lib/format';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +19,7 @@ export default function SharePage() {
   const [showVideo, setShowVideo] = useState(true);
   const [transferTime, setTransferTime] = useState<number | undefined>(undefined);
   const [transferPlaying, setTransferPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
   useTheme();
 
   const songs = share?.songs;
@@ -131,6 +133,7 @@ export default function SharePage() {
                 streamUrlOverride={shareStreamUrl(share.token)}
                 initialTime={transferTime}
                 autoPlay={transferPlaying}
+                onTimeUpdate={setCurrentTime}
                 showVideo={showVideo}
                 onShowVideoChange={(show) => handleVideoToggle(show)}
                 songs={songs ?? []}
@@ -148,6 +151,7 @@ export default function SharePage() {
                 peaksUrlOverride={shareWaveformUrl(share.token)}
                 initialTime={transferTime}
                 autoPlay={transferPlaying}
+                onTimeUpdate={setCurrentTime}
                 markers={songMarkers}
                 songs={songs}
                 showVideo={showVideo}
@@ -159,6 +163,18 @@ export default function SharePage() {
           <Card className="p-6 flex flex-col items-center justify-center min-h-[200px] text-muted-foreground">
             <Music className="w-8 h-8 mb-4 opacity-50" />
             <p>Player requires recording metadata.</p>
+          </Card>
+        )}
+
+        {songs && songs.length > 0 && recording && (
+          <Card className="p-6">
+            <SongMarkerList
+              recordingId={recording.id}
+              songs={songs}
+              readOnly
+              onSeek={handleSeek}
+              currentTime={currentTime}
+            />
           </Card>
         )}
 

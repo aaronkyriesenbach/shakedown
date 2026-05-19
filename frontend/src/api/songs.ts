@@ -28,11 +28,11 @@ export const songKeys = {
   all: (recordingId: string) => ['recordings', recordingId, 'songs'] as const,
 };
 
-export function useSongs(recordingId: string) {
+export function useSongs(recordingId: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: songKeys.all(recordingId),
     queryFn: () => apiFetch<Song[]>(`/api/recordings/${recordingId}/songs`),
-    enabled: !!recordingId,
+    enabled: (options?.enabled ?? true) && !!recordingId,
   });
 }
 
