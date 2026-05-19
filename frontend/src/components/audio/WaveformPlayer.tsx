@@ -164,8 +164,11 @@ export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>
           isReady={isReady}
           onTogglePlay={togglePlay}
           onVolumeChange={setVolume}
+          onSeek={(fraction) => seekToTime(fraction * duration)}
           showVideo={showVideo}
           onShowVideoChange={onShowVideoChange}
+          songs={sortedSongs.length > 0 ? sortedSongs : undefined}
+          onMarkerClick={(startSeconds) => seekToTime(startSeconds)}
           onPreviousTrack={sortedSongs.length > 0 ? handlePreviousTrack : undefined}
           onNextTrack={sortedSongs.length > 0 ? handleNextTrack : undefined}
         />

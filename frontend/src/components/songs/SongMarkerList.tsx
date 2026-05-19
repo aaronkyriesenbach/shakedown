@@ -12,10 +12,15 @@ interface SongMarkerListProps {
   recordingId: string;
   onSeek?: (seconds: number) => void;
   currentTime?: number;
+  /** When true, hides add/edit/delete controls. */
+  readOnly?: boolean;
+  /** When provided, uses these songs instead of fetching via useSongs. */
+  songs?: Song[];
 }
 
-export function SongMarkerList({ recordingId, onSeek, currentTime = 0 }: SongMarkerListProps) {
-  const { data: songs, isLoading } = useSongs(recordingId);
+export function SongMarkerList({ recordingId, onSeek, currentTime = 0, readOnly, songs: songsProp }: SongMarkerListProps) {
+  const { data: fetchedSongs, isLoading } = useSongs(recordingId, { enabled: !songsProp });
+  const songs = songsProp ?? fetchedSongs;
   const deleteMutation = useDeleteSong(recordingId, '');
   
   const [isAdding, setIsAdding] = useState(false);
@@ -61,7 +66,7 @@ export function SongMarkerList({ recordingId, onSeek, currentTime = 0 }: SongMar
           <Music className="w-5 h-5 text-muted-foreground" />
           Song Markers
         </h3>
-        {!isAdding && (
+        {!readOnly && !isAdding && (
           <Button size="sm" onClick={() => setIsAdding(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Add Marker
@@ -69,7 +74,7 @@ export function SongMarkerList({ recordingId, onSeek, currentTime = 0 }: SongMar
         )}
       </div>
 
-      {isAdding && (
+      {!readOnly && isAdding && (
         <div className="mb-6">
           <SongMarkerForm 
             recordingId={recordingId} 
@@ -80,7 +85,7 @@ export function SongMarkerList({ recordingId, onSeek, currentTime = 0 }: SongMar
       )}
 
       {sortedSongs.length === 0 ? (
-        !isAdding && (
+        !readOnly && !isAdding && (
           <div className="text-center py-12 border rounded-md border-dashed bg-muted/30">
             <Music className="w-10 h-10 mx-auto text-muted-foreground mb-3 opacity-50" />
             <p className="text-muted-foreground">No song markers yet.</p>
@@ -96,7 +101,7 @@ export function SongMarkerList({ recordingId, onSeek, currentTime = 0 }: SongMar
           {sortedSongs.map((song) => {
             const isActive = activeTrack?.id === song.id;
               
-            if (editingId === song.id) {
+            if (!readOnly && editingId === song.id) {
               return (
                 <div key={song.id} className="my-4">
                   <SongMarkerForm 
@@ -146,27 +151,29 @@ export function SongMarkerList({ recordingId, onSeek, currentTime = 0 }: SongMar
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-1 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingId(song.id);
-                      }}
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      onClick={(e) => handleDelete(e, song)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  {!readOnly && (
+                    <div className="flex items-center gap-1 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingId(song.id);
+                        }}
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={(e) => handleDelete(e, song)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 
                 {song.notes && (
