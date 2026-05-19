@@ -117,6 +117,10 @@ export function useMediaSession({
   // simultaneously on the lock screen. When markers exist, we register only
   // previoustrack/nexttrack and omit seekbackward/seekforward so iOS renders
   // the track-skip buttons.
+  //
+  // iOS also requires handlers to be (re-)registered while audio is actively
+  // playing; handlers set before playback may be ignored. Including isPlaying
+  // in the dependency array ensures handlers are re-asserted on play.
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
 
@@ -135,7 +139,6 @@ export function useMediaSession({
     navigator.mediaSession.setActionHandler('play', handlePlay);
     navigator.mediaSession.setActionHandler('pause', handlePause);
     navigator.mediaSession.setActionHandler('stop', handleStop);
-    navigator.mediaSession.setActionHandler('seekto', handleSeekTo);
 
     if (hasMarkers) {
       const handlePreviousTrack = () => {
@@ -160,6 +163,7 @@ export function useMediaSession({
         }
       };
 
+      navigator.mediaSession.setActionHandler('seekto', null);
       navigator.mediaSession.setActionHandler('seekbackward', null);
       navigator.mediaSession.setActionHandler('seekforward', null);
       navigator.mediaSession.setActionHandler('previoustrack', handlePreviousTrack);
@@ -175,6 +179,7 @@ export function useMediaSession({
         );
       };
 
+      navigator.mediaSession.setActionHandler('seekto', handleSeekTo);
       navigator.mediaSession.setActionHandler('seekbackward', handleSeekBackward);
       navigator.mediaSession.setActionHandler('seekforward', handleSeekForward);
       navigator.mediaSession.setActionHandler('previoustrack', null);
@@ -191,5 +196,5 @@ export function useMediaSession({
       navigator.mediaSession.setActionHandler('previoustrack', null);
       navigator.mediaSession.setActionHandler('nexttrack', null);
     };
-  }, [sortedMarkers]);
+  }, [sortedMarkers, isPlaying]);
 }
