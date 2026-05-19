@@ -151,6 +151,7 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
             autoPlay={transferPlaying}
             onTimeUpdate={setCurrentTime}
             markers={songMarkers}
+            songs={songs}
             showVideo={showVideo}
             onShowVideoChange={recording.media_type === 'video' ? (show) => handleVideoToggle(show) : undefined}
           />

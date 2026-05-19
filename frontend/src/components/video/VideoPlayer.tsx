@@ -82,6 +82,11 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       [songs],
     );
 
+    const sortedSongs = useMemo(
+      () => (songs ? [...songs].sort((a, b) => a.start_seconds - b.start_seconds) : []),
+      [songs],
+    );
+
     useMediaSession({
       title: recording.title,
       artworkUrl: posterUrl,
@@ -94,6 +99,24 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       onStop: stop,
       markers: mediaSessionMarkers,
     });
+
+    const handlePreviousTrack = useCallback(() => {
+      if (sortedSongs.length === 0) return;
+      let target: Song | undefined;
+      for (let i = sortedSongs.length - 1; i >= 0; i--) {
+        if (sortedSongs[i].start_seconds < currentTime - 2) {
+          target = sortedSongs[i];
+          break;
+        }
+      }
+      seekToTime(target ? target.start_seconds : 0);
+    }, [sortedSongs, currentTime, seekToTime]);
+
+    const handleNextTrack = useCallback(() => {
+      if (sortedSongs.length === 0) return;
+      const target = sortedSongs.find((s) => s.start_seconds > currentTime + 1);
+      if (target) seekToTime(target.start_seconds);
+    }, [sortedSongs, currentTime, seekToTime]);
 
     useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
@@ -154,6 +177,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           onShowVideoChange={onShowVideoChange}
           songs={songs}
           onMarkerClick={onMarkerClick ?? seekToTime}
+          onPreviousTrack={sortedSongs.length > 0 ? handlePreviousTrack : undefined}
+          onNextTrack={sortedSongs.length > 0 ? handleNextTrack : undefined}
         />
       </div>
     );

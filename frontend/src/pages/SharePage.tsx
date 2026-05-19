@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Download, Loader2, Calendar, Clock, Music } from 'lucide-react';
 import { useShare, shareStreamUrl, shareAudioStreamUrl, shareWaveformUrl, shareDownloadUrl } from '@/api/shares';
@@ -19,6 +19,12 @@ export default function SharePage() {
   const [transferTime, setTransferTime] = useState<number | undefined>(undefined);
   const [transferPlaying, setTransferPlaying] = useState(false);
   useTheme();
+
+  const songs = share?.songs;
+  const songMarkers = useMemo(
+    () => songs?.map((s) => ({ title: s.title, startSeconds: s.start_seconds })),
+    [songs],
+  );
 
   if (isLoading) {
     return (
@@ -44,6 +50,14 @@ export default function SharePage() {
 
   const recording = share.recording;
   const hasSnippet = share.start_seconds !== undefined && share.end_seconds !== undefined;
+
+  const handleSeek = (seconds: number) => {
+    if (recording?.media_type === 'video' && showVideo) {
+      videoRef.current?.seekTo(seconds);
+    } else {
+      waveformRef.current?.seekTo(seconds);
+    }
+  };
 
   const handleVideoToggle = (checked: boolean | 'indeterminate') => {
     if (showVideo) {
@@ -119,6 +133,8 @@ export default function SharePage() {
                 autoPlay={transferPlaying}
                 showVideo={showVideo}
                 onShowVideoChange={(show) => handleVideoToggle(show)}
+                songs={songs ?? []}
+                onMarkerClick={handleSeek}
               />
             ) : (
               <WaveformPlayer
@@ -132,6 +148,8 @@ export default function SharePage() {
                 peaksUrlOverride={shareWaveformUrl(share.token)}
                 initialTime={transferTime}
                 autoPlay={transferPlaying}
+                markers={songMarkers}
+                songs={songs}
                 showVideo={showVideo}
                 onShowVideoChange={recording.media_type === 'video' ? (show) => handleVideoToggle(show) : undefined}
               />

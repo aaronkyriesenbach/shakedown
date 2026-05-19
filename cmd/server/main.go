@@ -98,7 +98,7 @@ func main() {
 	tagHandler := tags.NewHandler(tagRepo, logger)
 
 	shareRepo := shares.NewRepository(db)
-	shareHandler := shares.NewHandler(shareRepo, recRepo, store, logger)
+	shareHandler := shares.NewHandler(shareRepo, recRepo, songRepo, store, logger)
 
 	adminHandler := admin.NewHandler(db, cfg.StorageRoot, logger)
 

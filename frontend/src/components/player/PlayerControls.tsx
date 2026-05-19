@@ -1,4 +1,4 @@
-import { Play, Pause, Maximize2, Video, VideoOff } from 'lucide-react';
+import { Play, Pause, Maximize2, Video, VideoOff, SkipBack, SkipForward } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatDuration } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -21,6 +21,8 @@ export interface PlayerControlsProps {
   /** Song markers rendered on the seek bar (only used when onSeek is provided). */
   songs?: Song[];
   onMarkerClick?: (startSeconds: number) => void;
+  onPreviousTrack?: () => void;
+  onNextTrack?: () => void;
   className?: string;
 }
 
@@ -28,7 +30,7 @@ export function PlayerControls({
   isPlaying, currentTime, duration, volume, isReady,
   onTogglePlay, onVolumeChange, onSeek, onFullscreen,
   showVideo, onShowVideoChange,
-  songs, onMarkerClick, className,
+  songs, onMarkerClick, onPreviousTrack, onNextTrack, className,
 }: PlayerControlsProps) {
   const progress = duration > 0 ? currentTime / duration : 0;
 
@@ -68,6 +70,19 @@ export function PlayerControls({
       )}
 
       <div className="flex items-center gap-2 sm:gap-4">
+        {onPreviousTrack && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onPreviousTrack}
+            disabled={!isReady}
+            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+            aria-label="Previous track"
+          >
+            <SkipBack className="h-4 w-4" />
+          </Button>
+        )}
+
         <Button
           variant="ghost"
           size="icon"
@@ -78,6 +93,19 @@ export function PlayerControls({
         >
           {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 ml-1" />}
         </Button>
+
+        {onNextTrack && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onNextTrack}
+            disabled={!isReady}
+            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+            aria-label="Next track"
+          >
+            <SkipForward className="h-4 w-4" />
+          </Button>
+        )}
 
         <div className="flex items-center gap-1.5 text-sm font-medium tabular-nums text-foreground/80 min-w-[100px]">
           <span>{formatDuration(currentTime)}</span>

@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/api/client';
 import type { Recording } from '@/api/recordings';
+import type { Song } from '@/api/songs';
 
 export interface Share {
   id: string;
@@ -16,7 +17,7 @@ export interface Share {
   created_at: string;
 }
 
-export type ShareWithRecording = Share & { recording?: Recording };
+export type ShareWithRecording = Share & { recording?: Recording; songs?: Song[] };
 
 export interface CreateShareInput {
   recording_id: string;
