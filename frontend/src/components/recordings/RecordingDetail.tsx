@@ -98,7 +98,7 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
   };
 
   const handleSeek = (seconds: number) => {
-    if (recording.media_type === 'video') {
+    if (recording.media_type === 'video' && showVideo) {
       videoRef.current?.seekTo(seconds);
     } else {
       waveformRef.current?.seekTo(seconds);
