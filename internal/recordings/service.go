@@ -104,7 +104,7 @@ func (svc *Service) recoverStuckJobs(staleThreshold time.Duration, audioTimeout,
 	}
 
 	for _, rec := range stuck {
-		svc.logger.Info("recovery: re-enqueuing stuck recording",
+		svc.logger.Warn("recovery: re-enqueuing stuck recording",
 			zap.String("recording_id", rec.ID),
 			zap.String("stuck_step", rec.ProcessingStep),
 			zap.Time("last_updated", rec.UpdatedAt),
@@ -132,12 +132,14 @@ func (svc *Service) recoverStuckJobs(staleThreshold time.Duration, audioTimeout,
 	}
 
 	if len(stuck) > 0 {
-		svc.logger.Info("recovery: re-enqueued stuck recordings", zap.Int("count", len(stuck)))
+		svc.logger.Warn("recovery: re-enqueued stuck recordings", zap.Int("count", len(stuck)))
 	}
 }
 
 // Shutdown stops the recovery loop and waits for all in-flight processing jobs to complete.
 func (svc *Service) Shutdown() {
+	svc.logger.Info("shutting down processing service")
 	close(svc.stopRecovery)
 	svc.wg.Wait()
+	svc.logger.Info("processing service stopped")
 }

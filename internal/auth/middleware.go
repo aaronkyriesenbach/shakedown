@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 )
 
 type contextKey string
@@ -39,7 +40,7 @@ func RequireAuth(db *pgxpool.Pool) func(http.Handler) http.Handler {
 // session validation. Only used when DISABLE_AUTH=true.
 // It upserts the dev user into the database so that foreign key constraints
 // (e.g. recordings.uploaded_by) are satisfied.
-func DevAuth(db *pgxpool.Pool) func(http.Handler) http.Handler {
+func DevAuth(db *pgxpool.Pool, logger *zap.Logger) func(http.Handler) http.Handler {
 	devUser := &User{
 		ID:          "00000000-0000-0000-0000-000000000000",
 		OIDCSub:     "dev",
@@ -58,7 +59,7 @@ func DevAuth(db *pgxpool.Pool) func(http.Handler) http.Handler {
 			devUser.ID, devUser.OIDCSub, devUser.Email, devUser.DisplayName, devUser.Role,
 		)
 		if err != nil {
-			_ = err
+			logger.Error("failed to upsert dev user", zap.Error(err))
 		}
 	}
 

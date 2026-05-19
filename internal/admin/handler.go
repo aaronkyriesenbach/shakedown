@@ -60,6 +60,7 @@ func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var u userRow
 		if err := rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.CreatedAt); err != nil {
+			h.logger.Warn("listUsers: failed to scan row", zap.Error(err))
 			continue
 		}
 		users = append(users, u)
@@ -123,6 +124,7 @@ func (h *Handler) dataDump(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var rec recMeta
 		if err := rows.Scan(&rec.ID, &rec.Title, &rec.FileExt, &rec.RecordedAt, &rec.DurationSeconds, &rec.CreatedAt); err != nil {
+			h.logger.Warn("dataDump: failed to scan recording row", zap.Error(err))
 			continue
 		}
 		allRecs = append(allRecs, rec)
@@ -180,6 +182,7 @@ func (h *Handler) dumpGroupedToZip(ctx context.Context, zw *zip.Writer, recMap m
 	for rows.Next() {
 		values, err := rows.Values()
 		if err != nil {
+			h.logger.Warn("dumpGroupedToZip: failed to read row values", zap.String("label", label), zap.Error(err))
 			continue
 		}
 		row := make(map[string]interface{}, len(values))

@@ -63,7 +63,7 @@ func main() {
 	var requireAuth func(http.Handler) http.Handler
 	if cfg.DisableAuth {
 		logger.Warn("authentication disabled via DISABLE_AUTH — all requests use a synthetic dev user")
-		requireAuth = auth.DevAuth(db)
+		requireAuth = auth.DevAuth(db, logger)
 	} else {
 		requireAuth = auth.RequireAuth(db)
 		authProvider, err := auth.NewProvider(ctx, cfg)
@@ -158,7 +158,14 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	logger.Info("starting shakedown server", zap.String("addr", addr))
+	logger.Info("starting shakedown server",
+		zap.String("version", version),
+		zap.String("commit", commit),
+		zap.String("addr", addr),
+		zap.String("storage_root", cfg.StorageRoot),
+		zap.Int("audio_workers", cfg.ProcessingMaxWorkers),
+		zap.Int("video_workers", cfg.VideoProcessingMaxWorkers),
+	)
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

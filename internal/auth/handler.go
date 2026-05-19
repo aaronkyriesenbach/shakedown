@@ -73,12 +73,14 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 	stateCookie, err := r.Cookie("oidc_state")
 	if err != nil || stateCookie.Value != r.URL.Query().Get("state") {
+		h.logger.Warn("OIDC callback: invalid or missing state")
 		http.Error(w, "invalid state", http.StatusBadRequest)
 		return
 	}
 
 	nonceCookie, err := r.Cookie("oidc_nonce")
 	if err != nil {
+		h.logger.Warn("OIDC callback: missing nonce cookie")
 		http.Error(w, "missing nonce", http.StatusBadRequest)
 		return
 	}
@@ -98,6 +100,7 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 		Groups  []string `json:"groups"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
+		h.logger.Error("OIDC callback: failed to parse token claims", zap.Error(err))
 		http.Error(w, "invalid token claims", http.StatusInternalServerError)
 		return
 	}

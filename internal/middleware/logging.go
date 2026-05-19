@@ -14,13 +14,23 @@ func Logger(logger *zap.Logger) func(http.Handler) http.Handler {
 			start := time.Now()
 			ww := chimiddleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			next.ServeHTTP(ww, r)
-			logger.Info("request",
+
+			fields := []zap.Field{
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),
 				zap.Int("status", ww.Status()),
 				zap.Duration("duration", time.Since(start)),
 				zap.String("request_id", chimiddleware.GetReqID(r.Context())),
-			)
+			}
+
+			switch status := ww.Status(); {
+			case status >= 500:
+				logger.Error("request", fields...)
+			case status >= 400:
+				logger.Warn("request", fields...)
+			default:
+				logger.Debug("request", fields...)
+			}
 		})
 	}
 }

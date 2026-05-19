@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // ffprobeResult holds output parsed from ffprobe JSON.
@@ -225,14 +227,19 @@ func (svc *Service) processAudioRecording(ctx context.Context, job ProcessingJob
 		procErr         *string
 	)
 
-	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "analyzing")
+	if err := svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "analyzing"); err != nil {
+		svc.logger.Warn("failed to update processing step", zap.String("recording_id", job.RecordingID), zap.String("step", "analyzing"), zap.Error(err))
+	}
 
 	probeResult, err := runFFprobe(ctx, originalPath)
 	if err != nil {
+		svc.logger.Error("processing: ffprobe failed", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		errStr := err.Error()
 		procErr = &errStr
-		_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-			0, 0, 0, 0, false, false, procErr, false, false, nil, nil)
+		if err := svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+			0, 0, 0, 0, false, false, procErr, false, false, nil, nil); err != nil {
+			svc.logger.Error("failed to update processing result", zap.String("recording_id", job.RecordingID), zap.Error(err))
+		}
 		return
 	}
 
@@ -252,20 +259,28 @@ func (svc *Service) processAudioRecording(ctx context.Context, job ProcessingJob
 		}
 	}
 
-	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "transcoding")
+	if err := svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "transcoding"); err != nil {
+		svc.logger.Warn("failed to update processing step", zap.String("recording_id", job.RecordingID), zap.String("step", "transcoding"), zap.Error(err))
+	}
 
 	if err := runFFmpeg(ctx, originalPath, playbackPath); err != nil {
+		svc.logger.Error("processing: transcoding failed", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		errStr := err.Error()
 		procErr = &errStr
-		_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-			durationSeconds, bitrate, sampleRate, channels, false, false, procErr, false, false, nil, nil)
+		if err := svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+			durationSeconds, bitrate, sampleRate, channels, false, false, procErr, false, false, nil, nil); err != nil {
+			svc.logger.Error("failed to update processing result", zap.String("recording_id", job.RecordingID), zap.Error(err))
+		}
 		return
 	}
 	playbackReady = true
 
-	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "generating_waveform")
+	if err := svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "generating_waveform"); err != nil {
+		svc.logger.Warn("failed to update processing step", zap.String("recording_id", job.RecordingID), zap.String("step", "generating_waveform"), zap.Error(err))
+	}
 
 	if err := runAudiowaveform(ctx, originalPath, waveformPath); err != nil {
+		svc.logger.Warn("processing: waveform generation failed", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		errStr := fmt.Sprintf("waveform generation failed: %v", err)
 		procErr = &errStr
 	} else {
@@ -273,8 +288,10 @@ func (svc *Service) processAudioRecording(ctx context.Context, job ProcessingJob
 		procErr = nil
 	}
 
-	_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-		durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, procErr, false, false, nil, nil)
+	if err := svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+		durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, procErr, false, false, nil, nil); err != nil {
+		svc.logger.Error("failed to update processing result", zap.String("recording_id", job.RecordingID), zap.Error(err))
+	}
 }
 
 func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob, recordingDir, originalPath string) {
@@ -297,14 +314,19 @@ func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob
 		procErr           *string
 	)
 
-	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "analyzing")
+	if err := svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "analyzing"); err != nil {
+		svc.logger.Warn("failed to update processing step", zap.String("recording_id", job.RecordingID), zap.String("step", "analyzing"), zap.Error(err))
+	}
 
 	probeResult, err := runFFprobe(ctx, originalPath)
 	if err != nil {
+		svc.logger.Error("processing: ffprobe failed", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		errStr := err.Error()
 		procErr = &errStr
-		_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-			0, 0, 0, 0, false, false, procErr, false, false, nil, nil)
+		if err := svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+			0, 0, 0, 0, false, false, procErr, false, false, nil, nil); err != nil {
+			svc.logger.Error("failed to update processing result", zap.String("recording_id", job.RecordingID), zap.Error(err))
+		}
 		return
 	}
 
@@ -327,20 +349,28 @@ func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob
 		}
 	}
 
-	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "transcoding")
+	if err := svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "transcoding"); err != nil {
+		svc.logger.Warn("failed to update processing step", zap.String("recording_id", job.RecordingID), zap.String("step", "transcoding"), zap.Error(err))
+	}
 
 	if err := runFFmpegVideo(ctx, originalPath, playbackPath, videoHeight); err != nil {
+		svc.logger.Error("processing: video transcoding failed", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		errStr := err.Error()
 		procErr = &errStr
-		_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-			durationSeconds, bitrate, sampleRate, channels, false, false, procErr, false, false, nil, nil)
+		if err := svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+			durationSeconds, bitrate, sampleRate, channels, false, false, procErr, false, false, nil, nil); err != nil {
+			svc.logger.Error("failed to update processing result", zap.String("recording_id", job.RecordingID), zap.Error(err))
+		}
 		return
 	}
 	playbackReady = true
 
-	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "extracting_thumbnail")
+	if err := svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "extracting_thumbnail"); err != nil {
+		svc.logger.Warn("failed to update processing step", zap.String("recording_id", job.RecordingID), zap.String("step", "extracting_thumbnail"), zap.Error(err))
+	}
 
 	if err := extractThumbnail(ctx, originalPath, thumbnailPath, durationSeconds); err != nil {
+		svc.logger.Warn("processing: thumbnail extraction failed", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		errStr := fmt.Sprintf("thumbnail extraction failed: %v", err)
 		procErr = &errStr
 	} else {
@@ -348,9 +378,12 @@ func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob
 		procErr = nil
 	}
 
-	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "extracting_audio")
+	if err := svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "extracting_audio"); err != nil {
+		svc.logger.Warn("failed to update processing step", zap.String("recording_id", job.RecordingID), zap.String("step", "extracting_audio"), zap.Error(err))
+	}
 
 	if err := extractAudioFromVideo(ctx, playbackPath, audioExtractPath); err != nil {
+		svc.logger.Warn("processing: audio extraction failed", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		errStr := fmt.Sprintf("audio extraction failed: %v", err)
 		procErr = &errStr
 	} else {
@@ -358,9 +391,12 @@ func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob
 		procErr = nil
 	}
 
-	_ = svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "generating_waveform")
+	if err := svc.repo.UpdateProcessingStep(ctx, job.RecordingID, "generating_waveform"); err != nil {
+		svc.logger.Warn("failed to update processing step", zap.String("recording_id", job.RecordingID), zap.String("step", "generating_waveform"), zap.Error(err))
+	}
 
 	if err := runAudiowaveform(ctx, audioExtractPath, waveformPath); err != nil {
+		svc.logger.Warn("processing: waveform generation failed", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		errStr := fmt.Sprintf("waveform generation failed: %v", err)
 		procErr = &errStr
 	} else {
@@ -370,8 +406,10 @@ func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob
 
 	vw := videoWidth
 	vh := videoHeight
-	_ = svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
-		durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, procErr, thumbnailReady, audioExtractReady, &vw, &vh)
+	if err := svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+		durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, procErr, thumbnailReady, audioExtractReady, &vw, &vh); err != nil {
+		svc.logger.Error("failed to update processing result", zap.String("recording_id", job.RecordingID), zap.Error(err))
+	}
 }
 
 // parseDateFromTags tries to extract recorded_at from ffprobe tags.
