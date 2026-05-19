@@ -224,6 +224,7 @@ func (h *Handler) getRecording(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "recordingID")
 	rec, err := h.svc.repo.GetByID(r.Context(), id)
 	if err != nil {
+		h.logger.Error("failed to get recording", zap.String("recording_id", id), zap.Error(err))
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -278,6 +279,7 @@ func (h *Handler) updateRecording(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) deleteRecording(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "recordingID")
 	if err := h.svc.repo.SoftDelete(r.Context(), id); err != nil {
+		h.logger.Error("failed to delete recording", zap.String("recording_id", id), zap.Error(err))
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -287,7 +289,16 @@ func (h *Handler) deleteRecording(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) streamRecording(w http.ResponseWriter, r *http.Request) {
 	recordingID := chi.URLParam(r, "recordingID")
 	rec, err := h.svc.repo.GetByID(r.Context(), recordingID)
-	if err != nil || rec == nil {
+	if err != nil {
+		h.logger.Error("failed to get recording for stream", zap.String("recording_id", recordingID), zap.Error(err))
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if rec == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if rec == nil {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -301,6 +312,7 @@ func (h *Handler) streamRecording(w http.ResponseWriter, r *http.Request) {
 	filePath := filepath.Join(h.svc.storage.root, rec.ID, PlaybackFilename(rec.MediaType))
 	f, err := os.Open(filePath)
 	if err != nil {
+		h.logger.Error("failed to open playback file", zap.String("recording_id", rec.ID), zap.String("path", filePath), zap.Error(err))
 		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
 		return
 	}
@@ -308,6 +320,7 @@ func (h *Handler) streamRecording(w http.ResponseWriter, r *http.Request) {
 
 	fi, err := f.Stat()
 	if err != nil {
+		h.logger.Error("failed to stat playback file", zap.String("recording_id", rec.ID), zap.Error(err))
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -323,7 +336,16 @@ func (h *Handler) streamRecording(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) audioStreamRecording(w http.ResponseWriter, r *http.Request) {
 	recordingID := chi.URLParam(r, "recordingID")
 	rec, err := h.svc.repo.GetByID(r.Context(), recordingID)
-	if err != nil || rec == nil {
+	if err != nil {
+		h.logger.Error("failed to get recording for audio stream", zap.String("recording_id", recordingID), zap.Error(err))
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if rec == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if rec == nil {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -341,6 +363,7 @@ func (h *Handler) audioStreamRecording(w http.ResponseWriter, r *http.Request) {
 	filePath := filepath.Join(h.svc.storage.root, rec.ID, AudioExtractFilename())
 	f, err := os.Open(filePath)
 	if err != nil {
+		h.logger.Error("failed to open audio extract file", zap.String("recording_id", rec.ID), zap.String("path", filePath), zap.Error(err))
 		http.Error(w, `{"error":"audio extract not found"}`, http.StatusNotFound)
 		return
 	}
@@ -348,6 +371,7 @@ func (h *Handler) audioStreamRecording(w http.ResponseWriter, r *http.Request) {
 
 	fi, err := f.Stat()
 	if err != nil {
+		h.logger.Error("failed to stat audio extract file", zap.String("recording_id", rec.ID), zap.Error(err))
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -359,7 +383,12 @@ func (h *Handler) audioStreamRecording(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) downloadRecording(w http.ResponseWriter, r *http.Request) {
 	recordingID := chi.URLParam(r, "recordingID")
 	rec, err := h.svc.repo.GetByID(r.Context(), recordingID)
-	if err != nil || rec == nil {
+	if err != nil {
+		h.logger.Error("failed to get recording for download", zap.String("recording_id", recordingID), zap.Error(err))
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if rec == nil {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -367,6 +396,7 @@ func (h *Handler) downloadRecording(w http.ResponseWriter, r *http.Request) {
 	filePath := filepath.Join(h.svc.storage.root, rec.ID, "original"+rec.FileExt)
 	f, err := os.Open(filePath)
 	if err != nil {
+		h.logger.Error("failed to open original file for download", zap.String("recording_id", rec.ID), zap.String("path", filePath), zap.Error(err))
 		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
 		return
 	}
@@ -374,6 +404,7 @@ func (h *Handler) downloadRecording(w http.ResponseWriter, r *http.Request) {
 
 	fi, err := f.Stat()
 	if err != nil {
+		h.logger.Error("failed to stat original file for download", zap.String("recording_id", rec.ID), zap.Error(err))
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -386,7 +417,12 @@ func (h *Handler) downloadRecording(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) waveformData(w http.ResponseWriter, r *http.Request) {
 	recordingID := chi.URLParam(r, "recordingID")
 	rec, err := h.svc.repo.GetByID(r.Context(), recordingID)
-	if err != nil || rec == nil {
+	if err != nil {
+		h.logger.Error("failed to get recording for waveform", zap.String("recording_id", recordingID), zap.Error(err))
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if rec == nil {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -399,6 +435,7 @@ func (h *Handler) waveformData(w http.ResponseWriter, r *http.Request) {
 	filePath := filepath.Join(h.svc.storage.root, rec.ID, "waveform.json")
 	f, err := os.Open(filePath)
 	if err != nil {
+		h.logger.Error("failed to open waveform file", zap.String("recording_id", rec.ID), zap.String("path", filePath), zap.Error(err))
 		http.Error(w, `{"error":"waveform not found"}`, http.StatusNotFound)
 		return
 	}
@@ -406,6 +443,7 @@ func (h *Handler) waveformData(w http.ResponseWriter, r *http.Request) {
 
 	fi, err := f.Stat()
 	if err != nil {
+		h.logger.Error("failed to stat waveform file", zap.String("recording_id", rec.ID), zap.Error(err))
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -417,7 +455,12 @@ func (h *Handler) waveformData(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) thumbnailRecording(w http.ResponseWriter, r *http.Request) {
 	recordingID := chi.URLParam(r, "recordingID")
 	rec, err := h.svc.repo.GetByID(r.Context(), recordingID)
-	if err != nil || rec == nil {
+	if err != nil {
+		h.logger.Error("failed to get recording for thumbnail", zap.String("recording_id", recordingID), zap.Error(err))
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if rec == nil {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -429,6 +472,7 @@ func (h *Handler) thumbnailRecording(w http.ResponseWriter, r *http.Request) {
 	filePath := filepath.Join(h.svc.storage.root, rec.ID, "thumbnail.jpg")
 	f, err := os.Open(filePath)
 	if err != nil {
+		h.logger.Error("failed to open thumbnail file", zap.String("recording_id", rec.ID), zap.String("path", filePath), zap.Error(err))
 		http.Error(w, `{"error":"thumbnail not found"}`, http.StatusNotFound)
 		return
 	}
@@ -436,6 +480,7 @@ func (h *Handler) thumbnailRecording(w http.ResponseWriter, r *http.Request) {
 
 	fi, err := f.Stat()
 	if err != nil {
+		h.logger.Error("failed to stat thumbnail file", zap.String("recording_id", rec.ID), zap.Error(err))
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -448,7 +493,12 @@ func (h *Handler) thumbnailRecording(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) segmentRecording(w http.ResponseWriter, r *http.Request) {
 	recordingID := chi.URLParam(r, "recordingID")
 	rec, err := h.svc.repo.GetByID(r.Context(), recordingID)
-	if err != nil || rec == nil {
+	if err != nil {
+		h.logger.Error("failed to get recording for segment", zap.String("recording_id", recordingID), zap.Error(err))
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if rec == nil {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
