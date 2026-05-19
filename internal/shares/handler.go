@@ -10,17 +10,19 @@ import (
 
 	"shakedown/internal/auth"
 	"shakedown/internal/recordings"
+	"shakedown/internal/songs"
 )
 
 type Handler struct {
-	repo    *Repository
-	storage recordings.Storage
-	recRepo *recordings.Repository
-	logger  *zap.Logger
+	repo     *Repository
+	storage  recordings.Storage
+	recRepo  *recordings.Repository
+	songRepo *songs.Repository
+	logger   *zap.Logger
 }
 
-func NewHandler(repo *Repository, recRepo *recordings.Repository, storage recordings.Storage, logger *zap.Logger) *Handler {
-	return &Handler{repo: repo, recRepo: recRepo, storage: storage, logger: logger}
+func NewHandler(repo *Repository, recRepo *recordings.Repository, songRepo *songs.Repository, storage recordings.Storage, logger *zap.Logger) *Handler {
+	return &Handler{repo: repo, recRepo: recRepo, songRepo: songRepo, storage: storage, logger: logger}
 }
 
 type createShareRequest struct {
@@ -84,6 +86,7 @@ func (h *Handler) CreateShare(w http.ResponseWriter, r *http.Request) {
 type shareWithRecording struct {
 	*Share
 	Recording *recordings.Recording `json:"recording,omitempty"`
+	Songs     []*songs.Song         `json:"songs,omitempty"`
 }
 
 func (h *Handler) GetShare(w http.ResponseWriter, r *http.Request) {
@@ -98,8 +101,13 @@ func (h *Handler) GetShare(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("failed to fetch recording for share", zap.Error(err))
 	}
 
+	shareSongs, err := h.songRepo.List(r.Context(), share.RecordingID)
+	if err != nil {
+		h.logger.Error("failed to fetch songs for share", zap.Error(err))
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(shareWithRecording{Share: share, Recording: rec})
+	_ = json.NewEncoder(w).Encode(shareWithRecording{Share: share, Recording: rec, Songs: shareSongs})
 }
 
 // StreamShare serves the processed playback file for a share token.

@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { getActiveTrack } from '@/lib/active-track';
 
 export interface MediaSessionMarker {
   title: string;
@@ -69,6 +70,16 @@ export function useMediaSession({
     durationRef.current = duration;
   }, [currentTime, duration]);
 
+  const sortedMarkers = useMemo(
+    () => (markers ? [...markers].sort((a, b) => a.startSeconds - b.startSeconds) : []),
+    [markers],
+  );
+
+  const activeTitle = useMemo(() => {
+    if (sortedMarkers.length === 0) return title;
+    return getActiveTrack(sortedMarkers, currentTime)?.title ?? title;
+  }, [sortedMarkers, currentTime, title]);
+
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
 
@@ -78,12 +89,12 @@ export function useMediaSession({
     }
 
     navigator.mediaSession.metadata = new MediaMetadata({
-      title,
+      title: activeTitle,
       artist: artist ?? undefined,
       album: album ?? undefined,
       artwork,
     });
-  }, [title, artist, album, artworkUrl]);
+  }, [activeTitle, artist, album, artworkUrl]);
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
@@ -102,12 +113,13 @@ export function useMediaSession({
   }, [currentTime, duration]);
 
   // --- Action handlers ---
+  // iOS Safari cannot display both seek (10s skip) and track-skip buttons
+  // simultaneously on the lock screen. When markers exist, we register only
+  // previoustrack/nexttrack and omit seekbackward/seekforward so iOS renders
+  // the track-skip buttons.
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
 
-    const sortedMarkers = markers
-      ? [...markers].sort((a, b) => a.startSeconds - b.startSeconds)
-      : [];
     const hasMarkers = sortedMarkers.length > 0;
 
     const handlePlay = () => onPlayRef.current();
@@ -120,27 +132,14 @@ export function useMediaSession({
       }
     };
 
-    const handleSeekBackward = () => {
-      onSeekToTimeRef.current(Math.max(0, currentTimeRef.current - SKIP_SECONDS));
-    };
-
-    const handleSeekForward = () => {
-      onSeekToTimeRef.current(
-        Math.min(durationRef.current, currentTimeRef.current + SKIP_SECONDS),
-      );
-    };
-
     navigator.mediaSession.setActionHandler('play', handlePlay);
     navigator.mediaSession.setActionHandler('pause', handlePause);
     navigator.mediaSession.setActionHandler('stop', handleStop);
     navigator.mediaSession.setActionHandler('seekto', handleSeekTo);
-    navigator.mediaSession.setActionHandler('seekbackward', handleSeekBackward);
-    navigator.mediaSession.setActionHandler('seekforward', handleSeekForward);
 
     if (hasMarkers) {
       const handlePreviousTrack = () => {
         const now = currentTimeRef.current;
-        // Find the last marker that starts before (now - threshold)
         let target: MediaSessionMarker | undefined;
         for (let i = sortedMarkers.length - 1; i >= 0; i--) {
           if (sortedMarkers[i].startSeconds < now - PREV_MARKER_THRESHOLD) {
@@ -153,7 +152,6 @@ export function useMediaSession({
 
       const handleNextTrack = () => {
         const now = currentTimeRef.current;
-        // Find the first marker that starts after (now + epsilon)
         const target = sortedMarkers.find(
           (m) => m.startSeconds > now + NEXT_MARKER_EPSILON,
         );
@@ -162,9 +160,23 @@ export function useMediaSession({
         }
       };
 
+      navigator.mediaSession.setActionHandler('seekbackward', null);
+      navigator.mediaSession.setActionHandler('seekforward', null);
       navigator.mediaSession.setActionHandler('previoustrack', handlePreviousTrack);
       navigator.mediaSession.setActionHandler('nexttrack', handleNextTrack);
     } else {
+      const handleSeekBackward = () => {
+        onSeekToTimeRef.current(Math.max(0, currentTimeRef.current - SKIP_SECONDS));
+      };
+
+      const handleSeekForward = () => {
+        onSeekToTimeRef.current(
+          Math.min(durationRef.current, currentTimeRef.current + SKIP_SECONDS),
+        );
+      };
+
+      navigator.mediaSession.setActionHandler('seekbackward', handleSeekBackward);
+      navigator.mediaSession.setActionHandler('seekforward', handleSeekForward);
       navigator.mediaSession.setActionHandler('previoustrack', null);
       navigator.mediaSession.setActionHandler('nexttrack', null);
     }
@@ -179,5 +191,5 @@ export function useMediaSession({
       navigator.mediaSession.setActionHandler('previoustrack', null);
       navigator.mediaSession.setActionHandler('nexttrack', null);
     };
-  }, [markers]);
+  }, [sortedMarkers]);
 }

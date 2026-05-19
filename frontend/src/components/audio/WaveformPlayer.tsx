@@ -1,10 +1,11 @@
-import { forwardRef, useImperativeHandle, useRef, useEffect, useCallback } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { useMediaSession, type MediaSessionMarker } from '@/hooks/useMediaSession';
 import { PlayerControls } from '@/components/player/PlayerControls';
 import { ProcessingStatus } from './ProcessingStatus';
 import { type Recording, thumbnailUrl } from '@/api/recordings';
 import { cn } from '@/lib/utils';
+import type { Song } from '@/api/songs';
 
 export interface WaveformPlayerProps {
   recording: Recording;
@@ -15,6 +16,7 @@ export interface WaveformPlayerProps {
   onTimeUpdate?: (time: number) => void;
   onSeek?: (time: number) => void;
   markers?: MediaSessionMarker[];
+  songs?: Song[];
   showVideo?: boolean;
   onShowVideoChange?: (show: boolean) => void;
   className?: string;
@@ -28,7 +30,7 @@ export interface WaveformPlayerRef {
 }
 
 export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>(
-  ({ recording, audioUrlOverride, peaksUrlOverride, initialTime, autoPlay, onTimeUpdate, onSeek, markers, showVideo, onShowVideoChange, className }, ref) => {
+  ({ recording, audioUrlOverride, peaksUrlOverride, initialTime, autoPlay, onTimeUpdate, onSeek, markers, songs, showVideo, onShowVideoChange, className }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const audioUrl = audioUrlOverride || `/api/recordings/${recording.id}/stream`;
     const peaksUrl = peaksUrlOverride !== undefined ? peaksUrlOverride : (recording.waveform_ready ? `/api/recordings/${recording.id}/waveform` : undefined);
@@ -71,6 +73,16 @@ export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>
 
     const artworkUrl = recording.thumbnail_ready ? thumbnailUrl(recording.id) : undefined;
 
+    const sortedSongs = useMemo(
+      () => (songs ? [...songs].sort((a, b) => a.start_seconds - b.start_seconds) : []),
+      [songs],
+    );
+
+    const mediaSessionMarkers = useMemo(
+      () => markers ?? sortedSongs.map((s) => ({ title: s.title, startSeconds: s.start_seconds })),
+      [markers, sortedSongs],
+    );
+
     useMediaSession({
       title: recording.title,
       artworkUrl,
@@ -81,8 +93,26 @@ export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>
       onPause: pause,
       onSeekToTime: seekToTime,
       onStop: stop,
-      markers,
+      markers: mediaSessionMarkers.length > 0 ? mediaSessionMarkers : undefined,
     });
+
+    const handlePreviousTrack = useCallback(() => {
+      if (sortedSongs.length === 0) return;
+      let target: Song | undefined;
+      for (let i = sortedSongs.length - 1; i >= 0; i--) {
+        if (sortedSongs[i].start_seconds < currentTime - 2) {
+          target = sortedSongs[i];
+          break;
+        }
+      }
+      seekToTime(target ? target.start_seconds : 0);
+    }, [sortedSongs, currentTime, seekToTime]);
+
+    const handleNextTrack = useCallback(() => {
+      if (sortedSongs.length === 0) return;
+      const target = sortedSongs.find((s) => s.start_seconds > currentTime + 1);
+      if (target) seekToTime(target.start_seconds);
+    }, [sortedSongs, currentTime, seekToTime]);
 
     useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
@@ -136,6 +166,8 @@ export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>
           onVolumeChange={setVolume}
           showVideo={showVideo}
           onShowVideoChange={onShowVideoChange}
+          onPreviousTrack={sortedSongs.length > 0 ? handlePreviousTrack : undefined}
+          onNextTrack={sortedSongs.length > 0 ? handleNextTrack : undefined}
         />
       </div>
     );

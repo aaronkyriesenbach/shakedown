@@ -3,6 +3,7 @@ import { Music, Plus, Edit2, Trash2, ChevronRight, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatDuration } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { getActiveTrack } from '@/lib/active-track';
 import { useSongs, useDeleteSong, type Song } from '@/api/songs';
 import { SongMarkerForm } from './SongMarkerForm';
 import { toast } from 'sonner';
@@ -31,6 +32,13 @@ export function SongMarkerList({ recordingId, onSeek, currentTime = 0 }: SongMar
   };
 
   const sortedSongs = [...(songs || [])].sort((a, b) => a.start_seconds - b.start_seconds);
+
+  const sortedAsMarkers = sortedSongs.map((s) => ({
+    id: s.id,
+    title: s.title,
+    startSeconds: s.start_seconds,
+  }));
+  const activeTrack = getActiveTrack(sortedAsMarkers, currentTime);
 
   if (isLoading) {
     return (
@@ -85,10 +93,8 @@ export function SongMarkerList({ recordingId, onSeek, currentTime = 0 }: SongMar
         )
       ) : (
         <div className="space-y-2">
-          {sortedSongs.map((song, index) => {
-            const nextSong = sortedSongs[index + 1];
-            const isActive = currentTime >= song.start_seconds &&
-              (nextSong == null || currentTime < nextSong.start_seconds);
+          {sortedSongs.map((song) => {
+            const isActive = activeTrack?.id === song.id;
               
             if (editingId === song.id) {
               return (
