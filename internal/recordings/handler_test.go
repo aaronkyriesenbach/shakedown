@@ -19,6 +19,10 @@ type stubTagHandler struct{}
 func (s stubTagHandler) Routes(_ chi.Router)             {}
 func (s stubTagHandler) RecordingTagRoutes(_ chi.Router) {}
 
+type stubShareHandler struct{}
+
+func (s stubShareHandler) RecordingRoutes(_ chi.Router) {}
+
 func TestNewHandler(t *testing.T) {
 	cfg := &config.Config{StorageRoot: t.TempDir()}
 	h := NewHandler(nil, cfg, zap.NewNop())
@@ -33,7 +37,7 @@ func TestRoutesRegistration(t *testing.T) {
 	r := chi.NewRouter()
 	requireAuth := func(next http.Handler) http.Handler { return next }
 
-	h.Routes(r, requireAuth, stubRouteHandler{}, stubRouteHandler{}, stubTagHandler{})
+	h.Routes(r, requireAuth, stubRouteHandler{}, stubRouteHandler{}, stubTagHandler{}, stubShareHandler{})
 }
 
 func TestWaveformData_NotReady(t *testing.T) {
@@ -53,7 +57,7 @@ func TestThumbnailRouteRegistered(t *testing.T) {
 	h := NewHandler(nil, cfg, zap.NewNop())
 	r := chi.NewRouter()
 	requireAuth := func(next http.Handler) http.Handler { return next }
-	h.Routes(r, requireAuth, stubRouteHandler{}, stubRouteHandler{}, stubTagHandler{})
+	h.Routes(r, requireAuth, stubRouteHandler{}, stubRouteHandler{}, stubTagHandler{}, stubShareHandler{})
 }
 
 func TestPlaybackFilename(t *testing.T) {

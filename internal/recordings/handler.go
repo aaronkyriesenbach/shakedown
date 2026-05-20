@@ -40,6 +40,7 @@ func (h *Handler) Routes(r chi.Router, requireAuth func(http.Handler) http.Handl
 		Routes(chi.Router)
 		RecordingTagRoutes(chi.Router)
 	},
+	shareHandler interface{ RecordingRoutes(chi.Router) },
 ) {
 	r.With(requireAuth).Get("/", h.listRecordings)
 	r.With(requireAuth).Post("/", h.upload)
@@ -57,6 +58,7 @@ func (h *Handler) Routes(r chi.Router, requireAuth func(http.Handler) http.Handl
 		r.Route("/songs", func(r chi.Router) { songHandler.Routes(r) })
 		r.Route("/comments", func(r chi.Router) { commentHandler.Routes(r) })
 		r.Route("/tags", func(r chi.Router) { tagHandler.RecordingTagRoutes(r) })
+		r.Route("/shares", func(r chi.Router) { shareHandler.RecordingRoutes(r) })
 	})
 }
 

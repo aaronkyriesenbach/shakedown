@@ -125,7 +125,7 @@ func main() {
 			}
 		})
 		r.Route("/recordings", func(r chi.Router) {
-			recHandler.Routes(r, requireAuth, songHandler, commentHandler, tagHandler)
+			recHandler.Routes(r, requireAuth, songHandler, commentHandler, tagHandler, shareHandler)
 		})
 		r.With(requireAuth).Route("/tags", func(r chi.Router) {
 			tagHandler.Routes(r)
