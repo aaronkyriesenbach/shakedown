@@ -30,7 +30,7 @@ export function ShareDialog({ recording, open, onOpenChange }: ShareDialogProps)
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const createMutation = useCreateShare();
+  const createMutation = useCreateShare(recording.id);
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
@@ -87,7 +87,7 @@ export function ShareDialog({ recording, open, onOpenChange }: ShareDialogProps)
       setCopied(true);
       toast.success('Copied to clipboard');
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
+    } catch {
       toast.error('Failed to copy to clipboard');
     }
   };

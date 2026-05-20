@@ -73,6 +73,42 @@ func (r *Repository) GetByToken(ctx context.Context, token string) (*Share, erro
 	return &s, nil
 }
 
+func (r *Repository) ListByRecordingID(ctx context.Context, recordingID string) ([]*Share, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, token, recording_id, song_id, start_seconds, end_seconds, label, created_by, expires_at, access_count, created_at
+		FROM shares WHERE recording_id=$1
+		ORDER BY created_at DESC
+	`, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf("shares: failed to list by recording: %w", err)
+	}
+	defer rows.Close()
+
+	var shares []*Share
+	for rows.Next() {
+		var s Share
+		if err := rows.Scan(
+			&s.ID, &s.Token, &s.RecordingID, &s.SongID, &s.StartSeconds, &s.EndSeconds,
+			&s.Label, &s.CreatedBy, &s.ExpiresAt, &s.AccessCount, &s.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("shares: failed to scan row: %w", err)
+		}
+		shares = append(shares, &s)
+	}
+	return shares, rows.Err()
+}
+
+func (r *Repository) Delete(ctx context.Context, id string) error {
+	tag, err := r.db.Exec(ctx, `DELETE FROM shares WHERE id=$1`, id)
+	if err != nil {
+		return fmt.Errorf("shares: failed to delete: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 func (r *Repository) IncrementAccess(ctx context.Context, id string) error {
 	_, err := r.db.Exec(ctx, `UPDATE shares SET access_count=access_count+1 WHERE id=$1`, id)
 	return err

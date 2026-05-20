@@ -3,9 +3,11 @@ package shares
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
 	"shakedown/internal/auth"
@@ -234,6 +236,70 @@ func (h *Handler) WaveformShare(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	http.ServeContent(w, r, "waveform.json", time.Now(), f)
+}
+
+// RecordingRoutes registers share routes nested under /api/recordings/{recordingID}/shares.
+func (h *Handler) RecordingRoutes(r chi.Router) {
+	r.Get("/", h.ListShares)
+	r.Delete("/{shareID}", h.DeleteShare)
+}
+
+// ListShares returns all shares for a recording.
+func (h *Handler) ListShares(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	recordingID := chi.URLParam(r, "recordingID")
+	if recordingID == "" {
+		http.Error(w, `{"error":"recording_id required"}`, http.StatusBadRequest)
+		return
+	}
+
+	shares, err := h.repo.ListByRecordingID(r.Context(), recordingID)
+	if err != nil {
+		h.logger.Error("failed to list shares", zap.String("recording_id", recordingID), zap.Error(err))
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if shares == nil {
+		shares = []*Share{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(shares)
+}
+
+// DeleteShare removes a share and cleans up any extracted snippet storage.
+func (h *Handler) DeleteShare(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	shareID := chi.URLParam(r, "shareID")
+	if shareID == "" {
+		http.Error(w, `{"error":"share_id required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Clean up snippet storage if it exists.
+	snippetDir, err := h.storage.FullPath(filepath.Join("shares", shareID))
+	if err == nil {
+		_ = os.RemoveAll(snippetDir)
+	}
+
+	if err := h.repo.Delete(r.Context(), shareID); err != nil {
+		h.logger.Error("failed to delete share", zap.String("share_id", shareID), zap.Error(err))
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // DownloadShare serves the original uploaded file as an attachment for download.

@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/api/client';
 import type { Recording } from '@/api/recordings';
 import type { Song } from '@/api/songs';
@@ -31,15 +31,22 @@ export interface CreateShareInput {
 export const shareKeys = {
   all: () => ['shares'] as const,
   detail: (token: string) => ['shares', 'detail', token] as const,
+  byRecording: (recordingId: string) => ['recordings', recordingId, 'shares'] as const,
 };
 
-export function useCreateShare() {
+export function useCreateShare(recordingId?: string) {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateShareInput) =>
       apiFetch<Share>('/api/shares', {
         method: 'POST',
         body: JSON.stringify(input),
       }),
+    onSuccess: () => {
+      if (recordingId) {
+        queryClient.invalidateQueries({ queryKey: shareKeys.byRecording(recordingId) });
+      }
+    },
   });
 }
 
@@ -48,6 +55,27 @@ export function useShare(token: string) {
     queryKey: shareKeys.detail(token),
     queryFn: () => apiFetch<ShareWithRecording>(`/api/s/${token}`),
     enabled: !!token,
+  });
+}
+
+export function useRecordingShares(recordingId: string) {
+  return useQuery({
+    queryKey: shareKeys.byRecording(recordingId),
+    queryFn: () => apiFetch<Share[]>(`/api/recordings/${recordingId}/shares`),
+    enabled: !!recordingId,
+  });
+}
+
+export function useDeleteShare(recordingId: string, shareId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<void>(`/api/recordings/${recordingId}/shares/${shareId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: shareKeys.byRecording(recordingId) });
+    },
   });
 }
 

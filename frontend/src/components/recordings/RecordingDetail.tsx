@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, Edit2, Trash2, Download, Share2, Tag as TagIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -14,9 +14,11 @@ import { VideoPlayer, type VideoPlayerRef } from '@/components/video/VideoPlayer
 import { RecordingEditDialog } from './RecordingEditDialog';
 import { SongMarkerList } from '@/components/songs/SongMarkerList';
 import { ShareDialog } from '@/components/shares/ShareDialog';
+import { ShareList } from '@/components/shares/ShareList';
 import { downloadUrl, segmentUrl, useDeleteRecording, audioStreamUrl, type Recording } from '@/api/recordings';
 import { useSongs } from '@/api/songs';
 import { useComments } from '@/api/comments';
+import { useRecordingShares } from '@/api/shares';
 import { useMe } from '@/api/auth';
 import { CommentThread } from '@/components/comments/CommentThread';
 import { CommentForm } from '@/components/comments/CommentForm';
@@ -31,9 +33,25 @@ interface RecordingDetailProps {
 
 export function RecordingDetail({ recording }: RecordingDetailProps) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const deleteMutation = useDeleteRecording(recording.id);
   const waveformRef = useRef<WaveformPlayerRef>(null);
   const videoRef = useRef<VideoPlayerRef>(null);
+
+  const validTabs = ['songs', 'comments', 'shares'] as const;
+  type TabValue = typeof validTabs[number];
+  const rawTab = searchParams.get('tab');
+  const activeTab: TabValue = validTabs.includes(rawTab as TabValue) ? (rawTab as TabValue) : 'songs';
+
+  const handleTabChange = (value: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (value === 'songs') {
+      next.delete('tab');
+    } else {
+      next.set('tab', value);
+    }
+    setSearchParams(next, { replace: true });
+  };
   
   const [currentTime, setCurrentTime] = useState(0);
   const [showVideo, setShowVideo] = useState(true);
@@ -48,6 +66,7 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
   const { data: comments = [], isLoading: isLoadingComments } = useComments(recording.id);
   const { data: currentUser } = useMe();
   const { data: songs } = useSongs(recording.id);
+  const { data: shares } = useRecordingShares(recording.id);
 
   const songMarkers = useMemo(
     () => songs?.map((s) => ({ title: s.title, startSeconds: s.start_seconds })),
@@ -159,10 +178,11 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
       </div>
 
       <div className="mt-8 pt-4">
-        <Tabs defaultValue="songs" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 md:w-[400px]">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+          <TabsList className="grid w-full grid-cols-3 md:w-[500px]">
             <TabsTrigger value="songs">Songs</TabsTrigger>
             <TabsTrigger value="comments">Comments ({comments.length})</TabsTrigger>
+            <TabsTrigger value="shares">Shares ({shares?.length ?? 0})</TabsTrigger>
           </TabsList>
           <TabsContent value="songs" className="p-0 border rounded-md mt-4 bg-card min-h-[200px]">
             <div className="p-6">
@@ -181,6 +201,11 @@ export function RecordingDetail({ recording }: RecordingDetailProps) {
               onSeek={handleSeek}
               isLoading={isLoadingComments}
             />
+          </Card>
+        </TabsContent>
+        <TabsContent value="shares" className="mt-4">
+          <Card className="p-6 bg-neutral-900/30 border-neutral-800">
+            <ShareList recordingId={recording.id} />
           </Card>
         </TabsContent>
         </Tabs>
