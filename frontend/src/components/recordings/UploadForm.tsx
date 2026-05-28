@@ -389,7 +389,8 @@ export function UploadForm() {
                           recording?.processing_step === 'analyzing' ? 'Analyzing' :
                           recording?.processing_step === 'transcoding' ? 'Transcoding' :
                           recording?.processing_step === 'generating_waveform' ? 'Generating waveform' :
-                          recording?.processing_step === 'extracting_thumbnail' ? 'Extracting thumbnail' : 'Processing'}
+                          recording?.processing_step === 'extracting_thumbnail' ? 'Extracting thumbnail' :
+                          recording?.processing_step === 'extracting_audio' ? 'Extracting audio' : 'Processing'}
                        </Badge>
                     ) : (
                       <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-emerald-500/20 flex items-center gap-1">

@@ -6,25 +6,43 @@ export type { ProcessingStep };
 
 export interface ProcessingStatusProps {
   processingStep: ProcessingStep;
+  mediaType: 'audio' | 'video';
   processingError?: string;
   className?: string;
 }
 
-const steps = [
+interface StepInfo {
+  id: string;
+  name: string;
+  description: string;
+}
+
+const audioSteps: StepInfo[] = [
   { id: 'analyzing', name: 'Analyzing audio', description: 'Reading file metadata and audio properties' },
   { id: 'transcoding', name: 'Transcoding', description: 'Converting to optimized playback format' },
-  { id: 'extracting_thumbnail', name: 'Extracting thumbnail', description: 'Extracting thumbnail from media' },
+  { id: 'generating_waveform', name: 'Generating waveform', description: 'Creating visual waveform data' },
+  { id: 'complete', name: 'Complete', description: 'Ready to play' },
+];
+
+const videoSteps: StepInfo[] = [
+  { id: 'analyzing', name: 'Analyzing video', description: 'Reading file metadata and video properties' },
+  { id: 'transcoding', name: 'Transcoding', description: 'Converting to optimized playback format' },
+  { id: 'extracting_thumbnail', name: 'Extracting thumbnail', description: 'Extracting poster frame from video' },
   { id: 'extracting_audio', name: 'Extracting audio', description: 'Creating audio-only track for lightweight playback' },
   { id: 'generating_waveform', name: 'Generating waveform', description: 'Creating visual waveform data' },
   { id: 'complete', name: 'Complete', description: 'Ready to play' },
 ];
 
-export function ProcessingStatus({ processingStep, processingError, className }: ProcessingStatusProps) {
+const audioStepOrder: readonly ProcessingStep[] = ['queued', 'analyzing', 'transcoding', 'generating_waveform', 'complete'];
+const videoStepOrder: readonly ProcessingStep[] = ['queued', 'analyzing', 'transcoding', 'extracting_thumbnail', 'extracting_audio', 'generating_waveform', 'complete'];
+
+export function ProcessingStatus({ processingStep, mediaType, processingError, className }: ProcessingStatusProps) {
   if (processingStep === 'complete' && !processingError) {
     return null;
   }
 
-  const stepOrder = ['queued', 'analyzing', 'transcoding', 'extracting_thumbnail', 'extracting_audio', 'generating_waveform', 'complete'];
+  const steps = mediaType === 'video' ? videoSteps : audioSteps;
+  const stepOrder = mediaType === 'video' ? videoStepOrder : audioStepOrder;
   const currentIndex = stepOrder.indexOf(processingStep);
 
   return (

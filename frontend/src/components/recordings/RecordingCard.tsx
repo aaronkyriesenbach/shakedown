@@ -79,6 +79,7 @@ export function RecordingCard({ recording, className }: RecordingCardProps) {
                 {recording.processing_step === 'transcoding' && 'Transcoding'}
                 {recording.processing_step === 'generating_waveform' && 'Generating waveform'}
                 {recording.processing_step === 'extracting_thumbnail' && 'Extracting thumbnail'}
+                {recording.processing_step === 'extracting_audio' && 'Extracting audio'}
               </Badge>
             ) : null}
           </div>

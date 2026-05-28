@@ -147,6 +147,7 @@ export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>
         <div className={cn('p-4 rounded-lg bg-card border shadow-sm', className)}>
           <ProcessingStatus
             processingStep={recording.processing_step}
+            mediaType={recording.media_type}
             processingError={recording.processing_error}
           />
         </div>
