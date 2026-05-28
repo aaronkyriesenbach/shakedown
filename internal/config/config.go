@@ -24,7 +24,7 @@ type Config struct {
 	SessionSecret string `envconfig:"SESSION_SECRET" required:"true"`
 
 	ProcessingMaxWorkers     int `envconfig:"PROCESSING_MAX_WORKERS" default:"4"`
-	ProcessingTimeoutSeconds int `envconfig:"PROCESSING_TIMEOUT_SECONDS" default:"300"`
+	ProcessingTimeoutSeconds int `envconfig:"PROCESSING_TIMEOUT_SECONDS" default:"1800"`
 
 	UploadMaxSizeMB int64 `envconfig:"UPLOAD_MAX_SIZE_MB" default:"500"`
 
