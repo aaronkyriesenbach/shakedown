@@ -210,6 +210,14 @@ func (svc *Service) processRecording(ctx context.Context, job ProcessingJob) {
 	svc.processAudioRecording(ctx, job, recordingDir, originalPath)
 }
 
+// dbContext returns a short-lived context for database writes that is
+// independent of the processing context. This ensures that cleanup DB
+// updates (e.g. recording the processing error) succeed even when the
+// processing context has expired due to a timeout.
+func dbContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 10*time.Second)
+}
+
 // processAudioRecording runs the full pipeline: ffprobe -> ffmpeg -> audiowaveform.
 // It updates the DB record with results at each stage.
 // Errors are logged but do not crash the server.
@@ -236,7 +244,9 @@ func (svc *Service) processAudioRecording(ctx context.Context, job ProcessingJob
 		svc.logger.Error("processing: ffprobe failed", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		errStr := err.Error()
 		procErr = &errStr
-		if err := svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+		dbCtx, dbCancel := dbContext()
+		defer dbCancel()
+		if err := svc.repo.UpdateProcessingResult(dbCtx, job.RecordingID,
 			0, 0, 0, 0, false, false, procErr, false, false, nil, nil); err != nil {
 			svc.logger.Error("failed to update processing result", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		}
@@ -267,7 +277,9 @@ func (svc *Service) processAudioRecording(ctx context.Context, job ProcessingJob
 		svc.logger.Error("processing: transcoding failed", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		errStr := err.Error()
 		procErr = &errStr
-		if err := svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+		dbCtx, dbCancel := dbContext()
+		defer dbCancel()
+		if err := svc.repo.UpdateProcessingResult(dbCtx, job.RecordingID,
 			durationSeconds, bitrate, sampleRate, channels, false, false, procErr, false, false, nil, nil); err != nil {
 			svc.logger.Error("failed to update processing result", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		}
@@ -288,7 +300,9 @@ func (svc *Service) processAudioRecording(ctx context.Context, job ProcessingJob
 		procErr = nil
 	}
 
-	if err := svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+	dbCtx, dbCancel := dbContext()
+	defer dbCancel()
+	if err := svc.repo.UpdateProcessingResult(dbCtx, job.RecordingID,
 		durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, procErr, false, false, nil, nil); err != nil {
 		svc.logger.Error("failed to update processing result", zap.String("recording_id", job.RecordingID), zap.Error(err))
 	}
@@ -323,7 +337,9 @@ func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob
 		svc.logger.Error("processing: ffprobe failed", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		errStr := err.Error()
 		procErr = &errStr
-		if err := svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+		dbCtx, dbCancel := dbContext()
+		defer dbCancel()
+		if err := svc.repo.UpdateProcessingResult(dbCtx, job.RecordingID,
 			0, 0, 0, 0, false, false, procErr, false, false, nil, nil); err != nil {
 			svc.logger.Error("failed to update processing result", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		}
@@ -357,7 +373,9 @@ func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob
 		svc.logger.Error("processing: video transcoding failed", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		errStr := err.Error()
 		procErr = &errStr
-		if err := svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+		dbCtx, dbCancel := dbContext()
+		defer dbCancel()
+		if err := svc.repo.UpdateProcessingResult(dbCtx, job.RecordingID,
 			durationSeconds, bitrate, sampleRate, channels, false, false, procErr, false, false, nil, nil); err != nil {
 			svc.logger.Error("failed to update processing result", zap.String("recording_id", job.RecordingID), zap.Error(err))
 		}
@@ -406,7 +424,9 @@ func (svc *Service) processVideoRecording(ctx context.Context, job ProcessingJob
 
 	vw := videoWidth
 	vh := videoHeight
-	if err := svc.repo.UpdateProcessingResult(ctx, job.RecordingID,
+	dbCtx, dbCancel := dbContext()
+	defer dbCancel()
+	if err := svc.repo.UpdateProcessingResult(dbCtx, job.RecordingID,
 		durationSeconds, bitrate, sampleRate, channels, playbackReady, waveformReady, procErr, thumbnailReady, audioExtractReady, &vw, &vh); err != nil {
 		svc.logger.Error("failed to update processing result", zap.String("recording_id", job.RecordingID), zap.Error(err))
 	}
