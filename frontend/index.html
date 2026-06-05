@@ -4,7 +4,10 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/icon.png" />
     <link rel="apple-touch-icon" href="/app_icon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" id="theme-color" content="hsl(240 10% 4%)" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Shakedown</title>
   </head>
   <body>
@@ -19,6 +22,8 @@
         d.classList.add(r);
         d.style.colorScheme = r;
         d.style.backgroundColor = r === 'dark' ? 'hsl(240 10% 4%)' : 'hsl(0 0% 97%)';
+        var m = document.getElementById('theme-color');
+        if (m) m.setAttribute('content', r === 'dark' ? 'hsl(240 10% 4%)' : 'hsl(0 0% 97%)');
       })();
     </script>
     <div id="root"></div>

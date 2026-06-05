@@ -13,6 +13,12 @@ function applyTheme(resolved: ResolvedTheme) {
   const root = document.documentElement;
   root.classList.remove('light', 'dark');
   root.classList.add(resolved);
+
+  const themeColor = resolved === 'dark' ? 'hsl(240 10% 4%)' : 'hsl(0 0% 97%)';
+  const meta = document.getElementById('theme-color');
+  if (meta) {
+    meta.setAttribute('content', themeColor);
+  }
 }
 
 export function useTheme() {
