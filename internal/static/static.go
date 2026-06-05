@@ -27,7 +27,16 @@ func SPAHandler() http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
+
+		// Vite-hashed assets are immutable — cache forever.
+		if strings.HasPrefix(path, "/assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
 		if path == "/" {
+			w.Header().Set("Cache-Control", "no-cache")
 			fileServer.ServeHTTP(w, r)
 			return
 		}
@@ -38,12 +47,14 @@ func SPAHandler() http.Handler {
 			stat, statErr := f.Stat()
 			_ = f.Close()
 			if statErr == nil && !stat.IsDir() {
+				w.Header().Set("Cache-Control", "no-cache")
 				fileServer.ServeHTTP(w, r)
 				return
 			}
 		}
 
 		// File not found — serve index.html for client-side routing.
+		w.Header().Set("Cache-Control", "no-cache")
 		r.URL.Path = "/"
 		fileServer.ServeHTTP(w, r)
 	})
