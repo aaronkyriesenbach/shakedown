@@ -897,7 +897,7 @@ function FileRow({
             placeholder="Auto-generated title"
           />
         )}
-        <div className="flex items-center gap-2 mt-1">
+        <div className="flex items-center gap-2 mt-1 ml-1">
           <span className="text-xs text-muted-foreground truncate">
             {file.name}
           </span>
@@ -932,7 +932,7 @@ function FileRow({
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-1/2 -translate-y-1/2"
+          className="h-8 w-8 text-muted-foreground opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity absolute right-2 top-1/2 -translate-y-1/2"
           onClick={() => onRemoveFile(file.id)}
         >
           <X className="w-4 h-4" />
