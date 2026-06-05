@@ -60,6 +60,10 @@
     --waveform-progress: 239 84% 75%;
   }
 
+  html {
+    background-color: hsl(var(--background));
+  }
+
   * {
     @apply border-border;
   }
@@ -111,5 +115,8 @@ input[type="number"] {
 }
 
 @supports (padding: env(safe-area-inset-top)) {
-  body { padding-top: env(safe-area-inset-top); }
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
