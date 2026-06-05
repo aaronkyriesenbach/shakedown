@@ -17,6 +17,13 @@ import type { Recording } from '@/api/recordings';
 
 const SUPPORTED_EXTENSIONS = new Set(['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.mp4', '.mov']);
 
+const ACCEPTED_FILE_TYPES = [
+  ...SUPPORTED_EXTENSIONS,
+  'audio/*',
+  'video/mp4',
+  'video/quicktime',
+];
+
 function isSupportedFile(file: File): boolean {
   const mimeType = file.type.toLowerCase();
   if (mimeType.startsWith('audio/') || mimeType === 'video/mp4' || mimeType === 'video/quicktime') {
@@ -88,7 +95,7 @@ export function UploadForm() {
   const [uppy] = useState(() => {
     const u = new Uppy<UploadMeta, RecordingBody>({
       restrictions: {
-        allowedFileTypes: ['audio/*', 'video/mp4', 'video/quicktime'],
+        allowedFileTypes: ACCEPTED_FILE_TYPES,
       },
     });
 
@@ -426,7 +433,7 @@ export function UploadForm() {
             ref={fileInputRef}
             className="hidden"
             multiple
-            accept="audio/*,video/mp4,video/quicktime"
+            accept={ACCEPTED_FILE_TYPES.join(',')}
             onChange={(e) => {
               if (e.target.files?.length) {
                 addFiles(e.target.files);
