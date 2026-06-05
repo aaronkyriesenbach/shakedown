@@ -107,4 +107,9 @@ input[type="number"] {
 
 @supports (padding: env(safe-area-inset-bottom)) {
   .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+}
+
+@supports (padding: env(safe-area-inset-top)) {
+  body { padding-top: env(safe-area-inset-top); }
 }
