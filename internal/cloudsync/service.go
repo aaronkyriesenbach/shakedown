@@ -168,6 +168,23 @@ func (s *Service) getBackoff(attempts int) time.Duration {
 	return s.cfg.BackoffBase * time.Duration(multiplier)
 }
 
+func (s *Service) checkEligibility(candidate recordings.SyncCandidate) (string, bool, string) {
+	if candidate.StoragePath == "" {
+		return "", false, "empty storage path"
+	}
+
+	localAbsPath, err := s.storage.FullPath(candidate.StoragePath)
+	if err != nil {
+		return "", false, err.Error()
+	}
+
+	if _, err := os.Stat(localAbsPath); err != nil {
+		return "", false, err.Error()
+	}
+
+	return localAbsPath, true, ""
+}
+
 func (s *Service) processCandidate(ctx context.Context, candidate recordings.SyncCandidate) {
 	state, err := s.store.Get(ctx, candidate.ID)
 	if err != nil {
@@ -175,6 +192,15 @@ func (s *Service) processCandidate(ctx context.Context, candidate recordings.Syn
 		return
 	}
 	if state != nil && state.Status == "synced" {
+		return
+	}
+
+	hasExistingRow := state != nil
+
+	localAbsPath, eligible, ineligibleReason := s.checkEligibility(candidate)
+
+	if !eligible && !hasExistingRow {
+		s.logger.Warn("skipping ineligible recording with no tracked state", zap.String("recording_id", candidate.ID))
 		return
 	}
 
@@ -206,22 +232,9 @@ func (s *Service) processCandidate(ctx context.Context, candidate recordings.Syn
 		return
 	}
 
-	if candidate.StoragePath == "" {
+	if !eligible {
 		nextAttempt := time.Now().Add(s.getBackoff(claim.Attempts))
-		s.markErrorSafely(candidate.ID, "local_missing", "empty storage path", nextAttempt)
-		return
-	}
-
-	localAbsPath, err := s.storage.FullPath(candidate.StoragePath)
-	if err != nil {
-		nextAttempt := time.Now().Add(s.getBackoff(claim.Attempts))
-		s.markErrorSafely(candidate.ID, "local_missing", err.Error(), nextAttempt)
-		return
-	}
-
-	if _, err := os.Stat(localAbsPath); err != nil {
-		nextAttempt := time.Now().Add(s.getBackoff(claim.Attempts))
-		s.markErrorSafely(candidate.ID, "local_missing", err.Error(), nextAttempt)
+		s.markErrorSafely(candidate.ID, "local_missing", ineligibleReason, nextAttempt)
 		return
 	}
 
@@ -233,7 +246,11 @@ func (s *Service) dispatchWorker(recordingID string, localAbsPath string, claim 
 	go func() {
 		defer s.wg.Done()
 
-		s.sem <- struct{}{}
+		select {
+		case s.sem <- struct{}{}:
+		case <-s.workerCtx.Done():
+			return
+		}
 		defer func() { <-s.sem }()
 
 		// Re-stat immediately before copying
@@ -263,9 +280,9 @@ func (s *Service) dispatchWorker(recordingID string, localAbsPath string, claim 
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					// IMPORTANT: Use workerCtx so heartbeat can still run even if main worker is slow,
-					// but stops when service is shutting down.
-					rows, err := s.store.Heartbeat(context.Background(), recordingID, s.leaseOwner, s.cfg.LeaseTTL)
+					hbCtx, hbCancel := context.WithTimeout(s.workerCtx, 5*time.Second)
+					rows, err := s.store.Heartbeat(hbCtx, recordingID, s.leaseOwner, s.cfg.LeaseTTL)
+					hbCancel()
 					if err != nil || rows == 0 {
 						atomic.StoreInt32(&leaseLost, 1)
 						cancel()
@@ -321,13 +338,23 @@ func (s *Service) dispatchWorker(recordingID string, localAbsPath string, claim 
 func (s *Service) markErrorSafely(recordingID string, errClass, errMsg string, nextAttempt time.Time) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, _ = s.store.MarkError(ctx, recordingID, s.leaseOwner, errClass, errMsg, nextAttempt)
+	rows, err := s.store.MarkError(ctx, recordingID, s.leaseOwner, errClass, errMsg, nextAttempt)
+	if err != nil {
+		s.logger.Error("failed to mark error", zap.Error(err), zap.String("recording_id", recordingID))
+	} else if rows == 0 {
+		s.logger.Warn("mark error ignored: lease lost or stolen", zap.String("recording_id", recordingID))
+	}
 }
 
 func (s *Service) markSyncedSafely(recordingID string, remoteFileID string, size int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, _ = s.store.MarkSynced(ctx, recordingID, s.leaseOwner, remoteFileID, size)
+	rows, err := s.store.MarkSynced(ctx, recordingID, s.leaseOwner, remoteFileID, size)
+	if err != nil {
+		s.logger.Error("failed to mark synced", zap.Error(err), zap.String("recording_id", recordingID))
+	} else if rows == 0 {
+		s.logger.Warn("mark synced ignored: lease lost or stolen", zap.String("recording_id", recordingID))
+	}
 }
 
 // StartScheduler starts the reconciliation loop.
@@ -339,8 +366,9 @@ func (s *Service) StartScheduler(interval time.Duration) {
 	go func() {
 		defer s.wg.Done()
 
-		// Run once on startup
-		_ = s.Reconcile(s.workerCtx)
+		if err := s.Reconcile(s.workerCtx); err != nil {
+			s.logger.Error("scheduler reconcile failed", zap.Error(err))
+		}
 
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -350,7 +378,9 @@ func (s *Service) StartScheduler(interval time.Duration) {
 			case <-s.stopScheduler:
 				return
 			case <-ticker.C:
-				_ = s.Reconcile(s.workerCtx)
+				if err := s.Reconcile(s.workerCtx); err != nil {
+					s.logger.Error("scheduler reconcile failed", zap.Error(err))
+				}
 			}
 		}
 	}()
@@ -365,8 +395,9 @@ func (s *Service) StartRecoveryLoop(interval time.Duration) {
 	go func() {
 		defer s.wg.Done()
 
-		// Run once on startup
-		_, _ = s.store.RecoverExpiredLeases(s.workerCtx)
+		if _, err := s.store.RecoverExpiredLeases(s.workerCtx); err != nil {
+			s.logger.Error("recovery loop failed", zap.Error(err))
+		}
 
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -376,7 +407,9 @@ func (s *Service) StartRecoveryLoop(interval time.Duration) {
 			case <-s.stopRecovery:
 				return
 			case <-ticker.C:
-				_, _ = s.store.RecoverExpiredLeases(s.workerCtx)
+				if _, err := s.store.RecoverExpiredLeases(s.workerCtx); err != nil {
+					s.logger.Error("recovery loop failed", zap.Error(err))
+				}
 			}
 		}
 	}()

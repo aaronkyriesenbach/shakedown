@@ -132,7 +132,7 @@ func (s *PostgresStateStore) MarkSynced(ctx context.Context, recordingID, owner,
 		UPDATE cloud_sync_state
 		SET status='synced', remote_file_id=$3, remote_size_bytes=$4, synced_at=now(), updated_at=now(),
 		    lease_owner=NULL, lease_expires_at=NULL, error=NULL, error_class=NULL, next_attempt_at=NULL
-		WHERE recording_id=$1 AND lease_owner=$2
+		WHERE recording_id=$1 AND lease_owner=$2 AND status='syncing'
 	`
 	tag, err := s.db.Exec(ctx, query, recordingID, owner, remoteFileID, remoteSize)
 	if err != nil {
@@ -146,7 +146,7 @@ func (s *PostgresStateStore) MarkError(ctx context.Context, recordingID, owner, 
 		UPDATE cloud_sync_state
 		SET status='error', error_class=$3, error=$4, next_attempt_at=$5, updated_at=now(),
 		    lease_owner=NULL, lease_expires_at=NULL
-		WHERE recording_id=$1 AND lease_owner=$2
+		WHERE recording_id=$1 AND lease_owner=$2 AND status='syncing'
 	`
 	tag, err := s.db.Exec(ctx, query, recordingID, owner, errClass, errMsg, nextAttemptAt)
 	if err != nil {
@@ -159,7 +159,7 @@ func (s *PostgresStateStore) Heartbeat(ctx context.Context, recordingID, owner s
 	query := `
 		UPDATE cloud_sync_state
 		SET lease_expires_at=now()+$3::interval, updated_at=now()
-		WHERE recording_id=$1 AND lease_owner=$2
+		WHERE recording_id=$1 AND lease_owner=$2 AND status='syncing'
 	`
 	tag, err := s.db.Exec(ctx, query, recordingID, owner, ttl)
 	return tag.RowsAffected(), err

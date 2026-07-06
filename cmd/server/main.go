@@ -131,7 +131,13 @@ func main() {
 	// GET /api/admin/sync/status always works: cloudProbe short-circuits on
 	// the "CLOUD_SYNC_ENABLED is false" check before ever touching the nil
 	// RemoteClient.
-	cloudHandler := cloudsync.NewHandler(cloudSvc, cloudRemoteClient, cloudStateStore, cfg.CloudSyncRemote, cloudProbe, logger)
+	// enabledFn gates POST /test and /remote: ONLY the CLOUD_SYNC_ENABLED
+	// flag, deliberately NOT the full cloudProbe readiness chain — these two
+	// endpoints exist specifically to get an admin from "remote not
+	// configured yet" to "fully working", so they must stay reachable while
+	// cloudProbe still reports disabled due to a missing/unreachable remote.
+	enabledFn := func() bool { return cfg.CloudSyncEnabled }
+	cloudHandler := cloudsync.NewHandler(cloudSvc, cloudRemoteClient, cloudStateStore, cfg.CloudSyncRemote, cloudProbe, enabledFn, logger)
 
 	songRepo := songs.NewRepository(db)
 	songHandler := songs.NewHandler(songRepo, logger)

@@ -58,15 +58,13 @@ export function CloudSyncCard() {
           </p>
         </div>
 
-        {status.enabled && (
-          <Button 
-            onClick={() => runSync.mutate()} 
-            disabled={status.in_progress || runSync.isPending}
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${status.in_progress || runSync.isPending ? 'animate-spin' : ''}`} />
-            {status.in_progress ? 'Syncing...' : 'Sync Now'}
-          </Button>
-        )}
+        <Button 
+          onClick={() => runSync.mutate()} 
+          disabled={!status.enabled || status.in_progress || runSync.isPending}
+        >
+          <RefreshCw className={`mr-2 h-4 w-4 ${status.in_progress || runSync.isPending ? 'animate-spin' : ''}`} />
+          {status.in_progress ? 'Syncing...' : 'Sync Now'}
+        </Button>
       </div>
 
       {!status.enabled && (
