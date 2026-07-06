@@ -62,9 +62,12 @@ func adminRequest(method, path string, body *strings.Reader) *http.Request {
 }
 
 func disabledStatusFn() (bool, string) { return false, "cloud sync disabled" }
+func enabledStatusFn() (bool, string)  { return true, "" }
+func enabledTrue() bool                { return true }
+func enabledFalse() bool               { return false }
 
 func TestHandler_Status_Disabled(t *testing.T) {
-	h := NewHandler(nil, nil, nil, "", disabledStatusFn, zap.NewNop())
+	h := NewHandler(nil, nil, nil, "", disabledStatusFn, enabledFalse, zap.NewNop())
 	w := httptest.NewRecorder()
 	h.status(w, adminRequest(http.MethodGet, "/status", nil))
 
@@ -94,7 +97,7 @@ func TestHandler_Status_Enabled_Schema(t *testing.T) {
 	store.states["rec-3"] = &SyncState{RecordingID: "rec-3", Status: "syncing"}
 	store.states["rec-4"] = &SyncState{RecordingID: "rec-4", Status: "error"}
 
-	h := NewHandler(nil, nil, store, "myremote", func() (bool, string) { return true, "" }, zap.NewNop())
+	h := NewHandler(nil, nil, store, "myremote", enabledStatusFn, enabledTrue, zap.NewNop())
 	w := httptest.NewRecorder()
 	h.status(w, adminRequest(http.MethodGet, "/status", nil))
 
@@ -144,7 +147,7 @@ func TestHandler_Status_Enabled_Schema(t *testing.T) {
 }
 
 func TestHandler_Run_Disabled(t *testing.T) {
-	h := NewHandler(nil, nil, nil, "", disabledStatusFn, zap.NewNop())
+	h := NewHandler(nil, nil, nil, "", disabledStatusFn, enabledFalse, zap.NewNop())
 	w := httptest.NewRecorder()
 	h.run(w, adminRequest(http.MethodPost, "/run", nil))
 
@@ -159,7 +162,7 @@ func TestHandler_Run_Enabled_AsyncSingleReconcile(t *testing.T) {
 		MaxWorkers: 1, MaxAttempts: 5, LeaseTTL: time.Minute, BackoffBase: time.Second,
 	})
 
-	h := NewHandler(svc, &fakeRemoteClient{}, newFakeStateStore(), "remote", func() (bool, string) { return true, "" }, zap.NewNop())
+	h := NewHandler(svc, &fakeRemoteClient{}, newFakeStateStore(), "remote", enabledStatusFn, enabledTrue, zap.NewNop())
 
 	start := time.Now()
 	w := httptest.NewRecorder()
@@ -200,7 +203,7 @@ func TestHandler_Run_Enabled_AsyncSingleReconcile(t *testing.T) {
 }
 
 func TestHandler_Test_Disabled(t *testing.T) {
-	h := NewHandler(nil, nil, nil, "", disabledStatusFn, zap.NewNop())
+	h := NewHandler(nil, nil, nil, "", disabledStatusFn, enabledFalse, zap.NewNop())
 	w := httptest.NewRecorder()
 	h.test(w, adminRequest(http.MethodPost, "/test", nil))
 
@@ -211,7 +214,7 @@ func TestHandler_Test_Disabled(t *testing.T) {
 
 func TestHandler_Test_Success(t *testing.T) {
 	client := &handlerFakeRemoteClient{remoteExistsFn: func(ctx context.Context) (bool, error) { return true, nil }}
-	h := NewHandler(nil, client, nil, "remote", func() (bool, string) { return true, "" }, zap.NewNop())
+	h := NewHandler(nil, client, nil, "remote", enabledStatusFn, enabledTrue, zap.NewNop())
 	w := httptest.NewRecorder()
 	h.test(w, adminRequest(http.MethodPost, "/test", nil))
 
@@ -229,7 +232,7 @@ func TestHandler_Test_Success(t *testing.T) {
 
 func TestHandler_Test_NegativeResultIsStill200(t *testing.T) {
 	client := &handlerFakeRemoteClient{remoteExistsFn: func(ctx context.Context) (bool, error) { return false, nil }}
-	h := NewHandler(nil, client, nil, "remote", func() (bool, string) { return true, "" }, zap.NewNop())
+	h := NewHandler(nil, client, nil, "remote", enabledStatusFn, enabledTrue, zap.NewNop())
 	w := httptest.NewRecorder()
 	h.test(w, adminRequest(http.MethodPost, "/test", nil))
 
@@ -249,7 +252,7 @@ func TestHandler_Test_NegativeResultIsStill200(t *testing.T) {
 }
 
 func TestHandler_Remote_Disabled(t *testing.T) {
-	h := NewHandler(nil, nil, nil, "", disabledStatusFn, zap.NewNop())
+	h := NewHandler(nil, nil, nil, "", disabledStatusFn, enabledFalse, zap.NewNop())
 	w := httptest.NewRecorder()
 	body := strings.NewReader("[remote]\ntype = s3")
 	h.remote(w, adminRequest(http.MethodPost, "/remote", body))
@@ -261,7 +264,7 @@ func TestHandler_Remote_Disabled(t *testing.T) {
 
 func TestHandler_Remote_PlainTextSuccess(t *testing.T) {
 	client := &handlerFakeRemoteClient{}
-	h := NewHandler(nil, client, nil, "remote", func() (bool, string) { return true, "" }, zap.NewNop())
+	h := NewHandler(nil, client, nil, "remote", enabledStatusFn, enabledTrue, zap.NewNop())
 	w := httptest.NewRecorder()
 	body := strings.NewReader("[remote]\ntype = s3")
 	req := adminRequest(http.MethodPost, "/remote", body)
@@ -277,7 +280,7 @@ func TestHandler_Remote_PlainTextSuccess(t *testing.T) {
 
 func TestHandler_Remote_JSONBodySuccess(t *testing.T) {
 	client := &handlerFakeRemoteClient{}
-	h := NewHandler(nil, client, nil, "remote", func() (bool, string) { return true, "" }, zap.NewNop())
+	h := NewHandler(nil, client, nil, "remote", enabledStatusFn, enabledTrue, zap.NewNop())
 	w := httptest.NewRecorder()
 	body := strings.NewReader(`{"config":"[remote]\ntype = s3"}`)
 	req := adminRequest(http.MethodPost, "/remote", body)
@@ -298,7 +301,7 @@ func TestHandler_Remote_Malformed(t *testing.T) {
 			return ErrRemotePathConflict // any error stands in for a validation failure here
 		},
 	}
-	h := NewHandler(nil, client, nil, "remote", func() (bool, string) { return true, "" }, zap.NewNop())
+	h := NewHandler(nil, client, nil, "remote", enabledStatusFn, enabledTrue, zap.NewNop())
 	w := httptest.NewRecorder()
 	body := strings.NewReader("[wrong-section]\ntype = s3")
 	req := adminRequest(http.MethodPost, "/remote", body)
@@ -317,7 +320,7 @@ func TestHandler_Remote_Malformed(t *testing.T) {
 }
 
 func TestHandler_Routes_SelfAppliesRequireAdmin(t *testing.T) {
-	h := NewHandler(nil, nil, nil, "", disabledStatusFn, zap.NewNop())
+	h := NewHandler(nil, nil, nil, "", disabledStatusFn, enabledFalse, zap.NewNop())
 	r := chi.NewRouter()
 	h.Routes(r)
 
@@ -338,5 +341,87 @@ func TestHandler_Routes_SelfAppliesRequireAdmin(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 with admin user in context, got %d", w.Code)
+	}
+}
+
+// TestHandler_RemoteAndTest_UsableBeforeFullReadiness locks in the fix for
+// the critical connect-flow bug: on first-time setup CLOUD_SYNC_ENABLED=true
+// but the remote doesn't exist in rclone.conf yet, so the full statusFn probe
+// reports disabled ("remote not configured"). /remote and /test must stay
+// reachable in that state (gated on enabledFn only) since they're literally
+// how an admin fixes "remote not configured" — only /status and /run should
+// honor the full probe's disabled verdict.
+func TestHandler_RemoteAndTest_UsableBeforeFullReadiness(t *testing.T) {
+	remoteNotConfiguredFn := func() (bool, string) { return false, "remote 'x' not configured" }
+	client := &handlerFakeRemoteClient{remoteExistsFn: func(ctx context.Context) (bool, error) { return false, nil }}
+	h := NewHandler(nil, client, nil, "x", remoteNotConfiguredFn, enabledTrue, zap.NewNop())
+
+	// /status and /run still correctly report disabled via the full probe.
+	w := httptest.NewRecorder()
+	h.status(w, adminRequest(http.MethodGet, "/status", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: expected 200, got %d", w.Code)
+	}
+	var statusBody map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &statusBody); err != nil {
+		t.Fatalf("status: invalid JSON: %v", err)
+	}
+	if enabled, _ := statusBody["enabled"].(bool); enabled {
+		t.Fatalf("status: expected enabled=false (remote not configured), got %v", statusBody)
+	}
+
+	w = httptest.NewRecorder()
+	h.run(w, adminRequest(http.MethodPost, "/run", nil))
+	if w.Code != http.StatusConflict {
+		t.Fatalf("run: expected 409 (nothing to sync to yet), got %d", w.Code)
+	}
+
+	// /test must NOT 409 here -- it should actually run RemoteExists and
+	// report a legitimate negative result.
+	w = httptest.NewRecorder()
+	h.test(w, adminRequest(http.MethodPost, "/test", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("test: expected 200 (not blocked by full-readiness probe), got %d", w.Code)
+	}
+	var testBody map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &testBody); err != nil {
+		t.Fatalf("test: invalid JSON: %v", err)
+	}
+	if ok, _ := testBody["ok"].(bool); ok {
+		t.Fatalf("test: expected ok=false (remote genuinely not reachable yet), got %v", testBody)
+	}
+
+	// /remote must NOT 409 here -- it's how the admin fixes the state.
+	w = httptest.NewRecorder()
+	body := strings.NewReader("[x]\ntype = s3")
+	h.remote(w, adminRequest(http.MethodPost, "/remote", body))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("remote: expected 204 (not blocked by full-readiness probe), got %d: %s", w.Code, w.Body.String())
+	}
+	if client.lastBlock != "[x]\ntype = s3" {
+		t.Fatalf("remote: expected config block to reach WriteRemoteConfig, got %q", client.lastBlock)
+	}
+}
+
+func TestHandler_Remote_OversizedBodyRejected(t *testing.T) {
+	client := &handlerFakeRemoteClient{}
+	h := NewHandler(nil, client, nil, "remote", enabledStatusFn, enabledTrue, zap.NewNop())
+
+	oversized := strings.NewReader("[remote]\n# " + strings.Repeat("a", maxRemoteConfigBytes+1))
+	w := httptest.NewRecorder()
+	h.remote(w, adminRequest(http.MethodPost, "/remote", oversized))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for oversized body, got %d", w.Code)
+	}
+	if client.lastBlock != "" {
+		t.Fatalf("expected WriteRemoteConfig to never be called with a truncated body, got %q (len %d)", client.lastBlock, len(client.lastBlock))
+	}
+	var errBody map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &errBody); err != nil {
+		t.Fatalf("expected JSON error body: %v", err)
+	}
+	if errBody["error"] == "" {
+		t.Fatalf("expected non-empty error field, got %v", errBody)
 	}
 }

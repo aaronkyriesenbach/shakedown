@@ -381,12 +381,21 @@ func TestService_AcceptanceMatrix(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "mismatch.mp3"), make([]byte, 100), 0644)
 
 	store.states["synced"] = &SyncState{Status: "synced"}
+	owner := "previous-owner"
+	expires := time.Now().Add(-1 * time.Hour)
+	store.states["missing"] = &SyncState{
+		Status:         "syncing",
+		Attempts:       1,
+		LeaseOwner:     &owner,
+		LeaseExpiresAt: &expires,
+	}
 
 	lister := &fakeLister{
 		candidates: []recordings.SyncCandidate{
 			{ID: "eligible", StoragePath: "eligible.mp3", FileSizeBytes: 100},
 			{ID: "synced", StoragePath: "synced.mp3", FileSizeBytes: 100},
 			{ID: "missing", StoragePath: "missing.mp3", FileSizeBytes: 100},
+			{ID: "never_claimed_missing", StoragePath: "never_claimed.mp3", FileSizeBytes: 100},
 			{ID: "mismatch", StoragePath: "mismatch.mp3", FileSizeBytes: 100},
 		},
 	}
@@ -405,7 +414,7 @@ func TestService_AcceptanceMatrix(t *testing.T) {
 		},
 	}
 
-	cfg := Config{MaxWorkers: 4, LeaseTTL: time.Hour, Root: "root", PathTemplate: "{id}.mp3"}
+	cfg := Config{MaxWorkers: 4, LeaseTTL: time.Hour, Root: "root", PathTemplate: "{id}.mp3", MaxAttempts: 5}
 	svc := NewService(store, client, lister, &fakeStorage{dir}, zap.NewNop(), cfg)
 
 	_ = svc.Reconcile(context.Background())
@@ -416,15 +425,19 @@ func TestService_AcceptanceMatrix(t *testing.T) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
-	if store.states["missing"].Status != "error" || *store.states["missing"].ErrorClass != "local_missing" {
+	if store.states["missing"] == nil || store.states["missing"].Status != "error" || store.states["missing"].ErrorClass == nil || *store.states["missing"].ErrorClass != "local_missing" {
 		t.Errorf("expected missing to have local_missing error")
 	}
 
-	if store.states["mismatch"].Status != "error" || *store.states["mismatch"].ErrorClass != "verify_failed" {
+	if _, exists := store.states["never_claimed_missing"]; exists {
+		t.Errorf("expected never_claimed_missing to NOT have a state row")
+	}
+
+	if store.states["mismatch"] == nil || store.states["mismatch"].Status != "error" || store.states["mismatch"].ErrorClass == nil || *store.states["mismatch"].ErrorClass != "verify_failed" {
 		t.Errorf("expected mismatch to have verify_failed error")
 	}
 
-	if store.states["eligible"].Status != "synced" {
+	if store.states["eligible"] == nil || store.states["eligible"].Status != "synced" {
 		t.Errorf("expected eligible to be synced")
 	}
 

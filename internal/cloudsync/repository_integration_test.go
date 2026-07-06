@@ -207,8 +207,30 @@ func TestPostgresStateStore_ClaimLeaseCollision(t *testing.T) {
 			t.Fatalf("expected real owner to mark synced. err: %v, rows: %d", err, rows)
 		}
 	})
-}
 
+
+	t.Run("TerminalOps_StatusFencing", func(t *testing.T) {
+		db.Exec(ctx, "TRUNCATE cloud_sync_state, recordings CASCADE")
+		_, recID := setupUserAndRecording(t, db)
+
+		owner := "owner1"
+		res1, _ := store.ClaimNew(ctx, recID, "path1.mp3", owner, time.Minute, 5)
+		if !res1.Claimed {
+			t.Fatal("expected claim to succeed")
+		}
+
+		rows, err := store.MarkSynced(ctx, recID, owner, "real-id", 100)
+		if err != nil || rows != 1 {
+			t.Fatalf("expected mark synced to succeed: err=%v, rows=%d", err, rows)
+		}
+
+		// Try to MarkSynced again with the same owner (row is now 'synced')
+		rows, err = store.MarkSynced(ctx, recID, owner, "real-id-2", 200)
+		if err != nil || rows != 0 {
+			t.Fatalf("expected mark synced to fail on already synced row: err=%v, rows=%d", err, rows)
+		}
+	})
+}
 
 func TestListAllForSync(t *testing.T) {
 	db, cleanup := setupTestDB(t)

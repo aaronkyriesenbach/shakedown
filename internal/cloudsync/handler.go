@@ -18,9 +18,10 @@ import (
 // maxRemoteConfigBytes bounds the size of a pasted rclone remote-config body.
 const maxRemoteConfigBytes = 1 << 20 // 1MB
 
-// StatusFunc reports whether cloud sync is currently enabled and, if not, why.
-// Todo 11 wires the real probe (config validation, remote reachability, etc.)
-// into this func; this handler only consumes the result.
+// StatusFunc reports the FULL readiness chain: flag on, remote name set,
+// template valid, rclone binary present, AND remote reachable. Used to gate
+// GET /status and POST /run, where "nothing to sync to yet" is a legitimate
+// 409. It must NOT gate /test or /remote — see enabledFn below.
 type StatusFunc func() (enabled bool, reason string)
 
 // Handler exposes the cloud-sync admin API. Routes are NOT mounted by this
@@ -32,18 +33,27 @@ type Handler struct {
 	store      StateStore
 	remoteName string
 	statusFn   StatusFunc
-	logger     *zap.Logger
+	// enabledFn reports ONLY the CLOUD_SYNC_ENABLED feature flag (no remote
+	// reachability check). /test and /remote gate on this instead of
+	// statusFn: their entire purpose is to help an admin go from "remote not
+	// configured yet" to "fully working", so they must stay usable even
+	// while the full readiness probe (statusFn) still reports disabled.
+	enabledFn func() bool
+	logger    *zap.Logger
 
 	mu              sync.Mutex
 	lastReconcileAt *time.Time
 }
 
-func NewHandler(svc *Service, client RemoteClient, store StateStore, remoteName string, statusFn StatusFunc, logger *zap.Logger) *Handler {
+func NewHandler(svc *Service, client RemoteClient, store StateStore, remoteName string, statusFn StatusFunc, enabledFn func() bool, logger *zap.Logger) *Handler {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
 	if statusFn == nil {
 		statusFn = func() (bool, string) { return false, "cloud sync not configured" }
+	}
+	if enabledFn == nil {
+		enabledFn = func() bool { return false }
 	}
 	return &Handler{
 		svc:        svc,
@@ -51,6 +61,7 @@ func NewHandler(svc *Service, client RemoteClient, store StateStore, remoteName 
 		store:      store,
 		remoteName: remoteName,
 		statusFn:   statusFn,
+		enabledFn:  enabledFn,
 		logger:     logger,
 	}
 }
@@ -126,9 +137,8 @@ func (h *Handler) run(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) test(w http.ResponseWriter, r *http.Request) {
-	enabled, reason := h.statusFn()
-	if !enabled {
-		writeJSONError(w, http.StatusConflict, reason)
+	if !h.enabledFn() {
+		writeJSONError(w, http.StatusConflict, "cloud sync is not enabled")
 		return
 	}
 
@@ -148,15 +158,18 @@ func (h *Handler) test(w http.ResponseWriter, r *http.Request) {
 // text/plain body (the whole body is the config block) or as JSON
 // (`{"config": "..."}`, selected via Content-Type: application/json).
 func (h *Handler) remote(w http.ResponseWriter, r *http.Request) {
-	enabled, reason := h.statusFn()
-	if !enabled {
-		writeJSONError(w, http.StatusConflict, reason)
+	if !h.enabledFn() {
+		writeJSONError(w, http.StatusConflict, "cloud sync is not enabled")
 		return
 	}
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxRemoteConfigBytes))
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRemoteConfigBytes+1))
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+	if len(body) > maxRemoteConfigBytes {
+		writeJSONError(w, http.StatusBadRequest, "remote config exceeds maximum size")
 		return
 	}
 
