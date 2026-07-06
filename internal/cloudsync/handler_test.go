@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"shakedown/internal/auth"
+	"shakedown/internal/recordings"
 )
 
 // handlerFakeRemoteClient is a RemoteClient fake with per-test configurable
@@ -157,12 +158,14 @@ func TestHandler_Run_Disabled(t *testing.T) {
 }
 
 func TestHandler_Run_Enabled_AsyncSingleReconcile(t *testing.T) {
+	store := newFakeStateStore()
 	lister := &fakeLister{candidates: nil} // empty -> Reconcile's loop stops after 1 slow ListAllForSync call
-	svc := NewService(newFakeStateStore(), &fakeRemoteClient{}, lister, &fakeStorage{dir: t.TempDir()}, zap.NewNop(), Config{
+	storage, _ := recordings.NewLocalStorage(t.TempDir())
+	svc := NewService(store, &fakeRemoteClient{}, lister, storage, zap.NewNop(), Config{
 		MaxWorkers: 1, MaxAttempts: 5, LeaseTTL: time.Minute, BackoffBase: time.Second,
 	})
 
-	h := NewHandler(svc, &fakeRemoteClient{}, newFakeStateStore(), "remote", enabledStatusFn, enabledTrue, zap.NewNop())
+	h := NewHandler(svc, &fakeRemoteClient{}, store, "remote", enabledStatusFn, enabledTrue, zap.NewNop())
 
 	start := time.Now()
 	w := httptest.NewRecorder()

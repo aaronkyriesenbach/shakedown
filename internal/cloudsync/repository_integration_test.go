@@ -14,7 +14,7 @@ import (
 
 func setupUserAndRecording(t *testing.T, db *pgxpool.Pool) (string, string) {
 	ctx := context.Background()
-	
+
 	// Create user
 	userID := uuid.NewString()
 	_, err := db.Exec(ctx, "INSERT INTO users (id, oidc_sub, email, display_name) VALUES ($1, $2, $3, 'Test User')", userID, userID, userID+"@test.com")
@@ -81,7 +81,7 @@ func TestPostgresStateStore_ClaimLeaseCollision(t *testing.T) {
 
 		owner := "owner1"
 		_, _ = store.ClaimNew(ctx, recID, "path1.mp3", owner, time.Minute, 5) // ignoring result
-		
+
 		_, err := store.MarkSynced(ctx, recID, owner, "remote_id_1", 1024)
 		if err != nil {
 			t.Fatalf("marksynced failed: %v", err)
@@ -207,7 +207,6 @@ func TestPostgresStateStore_ClaimLeaseCollision(t *testing.T) {
 			t.Fatalf("expected real owner to mark synced. err: %v, rows: %d", err, rows)
 		}
 	})
-
 
 	t.Run("TerminalOps_StatusFencing", func(t *testing.T) {
 		db.Exec(ctx, "TRUNCATE cloud_sync_state, recordings CASCADE")

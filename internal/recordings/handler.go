@@ -164,11 +164,12 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	err = h.svc.repo.UpdateStoragePath(r.Context(), rec.ID, storagePath)
 	if err != nil {
 		h.logger.Error("failed to update storage path", zap.Error(err))
-	}
-	rec.StoragePath = storagePath
+	} else {
+		rec.StoragePath = storagePath
 
-	if h.OnRecordingReady != nil {
-		h.OnRecordingReady(rec.ID)
+		if h.OnRecordingReady != nil {
+			h.OnRecordingReady(rec.ID)
+		}
 	}
 
 	timeout := h.cfg.ProcessingTimeoutSeconds

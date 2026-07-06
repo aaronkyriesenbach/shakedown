@@ -23,6 +23,17 @@ var (
 	multiSpace   = regexp.MustCompile(`\s+`)
 )
 
+func trimSpacesAndDots(s string) string {
+	for {
+		trimmed := strings.TrimSpace(s)
+		trimmed = strings.Trim(trimmed, ".")
+		if trimmed == s {
+			return trimmed
+		}
+		s = trimmed
+	}
+}
+
 // SanitizeSegment sanitizes a path segment (e.g. title) according to the rules:
 // - Replace / \ : * ? " < > | and control characters with _
 // - Collapse multiple internal whitespaces to a single space
@@ -32,16 +43,13 @@ var (
 func SanitizeSegment(s string) string {
 	s = invalidChars.ReplaceAllString(s, "_")
 	s = multiSpace.ReplaceAllString(s, " ")
-	s = strings.TrimSpace(s)
-	s = strings.Trim(s, ".")
+	s = trimSpacesAndDots(s)
 
 	runes := []rune(s)
 	if len(runes) > 200 {
 		runes = runes[:200]
-		// Trimming again in case truncation left trailing spaces or dots
 		s = string(runes)
-		s = strings.TrimSpace(s)
-		s = strings.Trim(s, ".")
+		s = trimSpacesAndDots(s)
 	} else {
 		s = string(runes)
 	}

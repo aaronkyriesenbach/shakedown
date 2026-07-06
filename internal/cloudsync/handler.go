@@ -126,7 +126,9 @@ func (h *Handler) run(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		_ = h.svc.Reconcile(context.Background())
+		if err := h.svc.Reconcile(context.Background()); err != nil {
+			h.logger.Error("manual sync run failed", zap.Error(err))
+		}
 		now := time.Now()
 		h.mu.Lock()
 		h.lastReconcileAt = &now
