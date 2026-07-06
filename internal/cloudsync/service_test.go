@@ -114,6 +114,16 @@ func (f *fakeStateStore) RecoverExpiredLeases(ctx context.Context) (int64, error
 	return 0, nil
 }
 
+func (f *fakeStateStore) CountByStatus(ctx context.Context) (map[string]int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	counts := make(map[string]int)
+	for _, s := range f.states {
+		counts[s.Status]++
+	}
+	return counts, nil
+}
+
 type fakeRemoteClient struct {
 	copyFunc func(ctx context.Context, localAbsPath, remotePath string) error
 	statFunc func(ctx context.Context, remotePath string) (int64, bool, error)

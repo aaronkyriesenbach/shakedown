@@ -44,6 +44,7 @@ type StateStore interface {
 	MarkError(ctx context.Context, recordingID, owner, errClass, errMsg string, nextAttemptAt time.Time) (int64, error)
 	Heartbeat(ctx context.Context, recordingID, owner string, ttl time.Duration) (rowsAffected int64, err error)
 	RecoverExpiredLeases(ctx context.Context) (int64, error)
+	CountByStatus(ctx context.Context) (map[string]int, error)
 }
 
 type PostgresStateStore struct {
@@ -173,4 +174,26 @@ func (s *PostgresStateStore) RecoverExpiredLeases(ctx context.Context) (int64, e
 	`
 	tag, err := s.db.Exec(ctx, query)
 	return tag.RowsAffected(), err
+}
+
+func (s *PostgresStateStore) CountByStatus(ctx context.Context) (map[string]int, error) {
+	rows, err := s.db.Query(ctx, `SELECT status, COUNT(*) FROM cloud_sync_state GROUP BY status`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		counts[status] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return counts, nil
 }
