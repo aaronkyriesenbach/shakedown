@@ -22,9 +22,10 @@ import (
 
 // Handler handles HTTP requests for recordings.
 type Handler struct {
-	svc    *Service
-	cfg    *config.Config
-	logger *zap.Logger
+	svc              *Service
+	cfg              *config.Config
+	logger           *zap.Logger
+	OnRecordingReady func(id string)
 }
 
 // NewHandler creates a recordings Handler.
@@ -84,7 +85,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-    mimeType, ext, validated, err := ValidateMediaMagicBytes(file)
+	mimeType, ext, validated, err := ValidateMediaMagicBytes(file)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%v"}`, err), http.StatusUnprocessableEntity)
 		return
@@ -160,11 +161,15 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.svc.repo.db.Exec(r.Context(), `UPDATE recordings SET storage_path=$2, updated_at=now() WHERE id=$1`, rec.ID, storagePath)
+	err = h.svc.repo.UpdateStoragePath(r.Context(), rec.ID, storagePath)
 	if err != nil {
 		h.logger.Error("failed to update storage path", zap.Error(err))
 	}
 	rec.StoragePath = storagePath
+
+	if h.OnRecordingReady != nil {
+		h.OnRecordingReady(rec.ID)
+	}
 
 	timeout := h.cfg.ProcessingTimeoutSeconds
 	if mediaType == "video" {
@@ -183,8 +188,6 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(rec)
 }
-
-
 
 func (h *Handler) listRecordings(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()

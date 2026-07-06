@@ -504,3 +504,8 @@ func (repo *Repository) ListAllForSync(ctx context.Context, afterID string, limi
 
 	return candidates, nil
 }
+
+func (r *Repository) UpdateStoragePath(ctx context.Context, id, storagePath string) error {
+	_, err := r.db.Exec(ctx, `UPDATE recordings SET storage_path=$2, updated_at=now() WHERE id=$1`, id, storagePath)
+	return err
+}
