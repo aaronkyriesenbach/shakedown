@@ -83,7 +83,7 @@ func (c *rcloneClient) WriteRemoteConfig(ctx context.Context, block string) erro
 	lines := strings.Split(block, "\n")
 	foundSection := false
 	sectionHeader := "[" + c.remote + "]"
-	
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
@@ -96,26 +96,26 @@ func (c *rcloneClient) WriteRemoteConfig(ctx context.Context, block string) erro
 			foundSection = true
 		}
 	}
-	
+
 	if !foundSection {
 		return errors.New("invalid config block: missing section header")
 	}
-	
+
 	dir := filepath.Dir(c.configPath)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
-	
+
 	tmpFile := c.configPath + ".tmp"
 	if err := os.WriteFile(tmpFile, []byte(block), 0600); err != nil {
 		return fmt.Errorf("failed to write temp config: %w", err)
 	}
-	
+
 	if err := os.Rename(tmpFile, c.configPath); err != nil {
 		os.Remove(tmpFile)
 		return fmt.Errorf("failed to rename config: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -124,7 +124,7 @@ func (c *rcloneClient) Copy(ctx context.Context, localAbsPath, remotePath string
 	if c.tpsLimit > 0 {
 		args = append(args, "--tpslimit", strconv.Itoa(c.tpsLimit))
 	}
-	
+
 	_, err := c.runner.Run(ctx, c.rcloneBin, args...)
 	if err != nil {
 		return sanitizeError("copyto", err)
@@ -142,20 +142,20 @@ func (c *rcloneClient) StatSize(ctx context.Context, remotePath string) (int64, 
 	if err != nil {
 		return 0, false, sanitizeError("lsjson", err)
 	}
-	
+
 	out = bytes.TrimSpace(out)
 	if len(out) == 0 || string(out) == "[]" {
 		return 0, false, nil
 	}
-	
+
 	var item lsjsonItem
 	if err := json.Unmarshal(out, &item); err != nil {
 		return 0, false, sanitizeError("lsjson parse", err)
 	}
-	
+
 	if item.IsDir {
 		return 0, false, nil
 	}
-	
+
 	return item.Size, true, nil
 }

@@ -42,6 +42,16 @@ func TestSanitizeSegment(t *testing.T) {
 			input:    "../../etc/passwd",
 			expected: "_.._etc_passwd",
 		},
+		{
+			name:     "interleaved spaces and dots outer spaces",
+			input:    ". title .",
+			expected: "title",
+		},
+		{
+			name:     "multiple alternating layers of spaces and dots",
+			input:    ".  . title .  .",
+			expected: "title",
+		},
 	}
 
 	longEmoji := ""

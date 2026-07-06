@@ -11,11 +11,11 @@ import (
 )
 
 type fakeRunner struct {
-	t        *testing.T
-	calls    [][]string
-	outputs  []string
-	errs     []error
-	callIdx  int
+	t       *testing.T
+	calls   [][]string
+	outputs []string
+	errs    []error
+	callIdx int
 }
 
 func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -55,7 +55,7 @@ func TestClient_RemoteExists(t *testing.T) {
 		errs:    []error{nil, nil},
 	}
 	client := NewRcloneClient(runner, "rclone", "/config.conf", "foo", 0)
-	
+
 	exists, err := client.RemoteExists(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -80,12 +80,12 @@ func TestClient_Copy(t *testing.T) {
 		errs:    []error{nil, errors.New("boom")},
 	}
 	client := NewRcloneClient(runner, "rclone", "/config.conf", "foo", 10)
-	
+
 	err := client.Copy(context.Background(), "/local/x.mp3", "Shakedown/2024/2024-01-02/My Show.mp3")
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	expected := []string{"rclone", "--config", "/config.conf", "copyto", "/local/x.mp3", "foo:Shakedown/2024/2024-01-02/My Show.mp3", "--tpslimit", "10"}
 	if !reflect.DeepEqual(runner.calls[0], expected) {
 		t.Fatalf("bad args: %v", runner.calls[0])
@@ -105,7 +105,7 @@ func TestClient_Copy(t *testing.T) {
 
 func TestClient_StatSize(t *testing.T) {
 	runner := &fakeRunner{
-		t:       t,
+		t: t,
 		outputs: []string{
 			`{"Size": 12345, "IsDir": false}`,
 			`{"Size": 0, "IsDir": true}`,
@@ -115,23 +115,39 @@ func TestClient_StatSize(t *testing.T) {
 		errs: []error{nil, nil, nil, nil},
 	}
 	client := NewRcloneClient(runner, "rclone", "/config.conf", "foo", 0)
-	
+
 	size, found, err := client.StatSize(context.Background(), "path/1.mp3")
-	if err != nil { t.Fatal(err) }
-	if !found || size != 12345 { t.Fatalf("bad result 1: %v %v", size, found) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || size != 12345 {
+		t.Fatalf("bad result 1: %v %v", size, found)
+	}
 
 	size, found, err = client.StatSize(context.Background(), "path/dir")
-	if err != nil { t.Fatal(err) }
-	if found { t.Fatalf("expected dir to be not found: %v", size) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatalf("expected dir to be not found: %v", size)
+	}
 
 	size, found, err = client.StatSize(context.Background(), "path/empty")
-	if err != nil { t.Fatal(err) }
-	if found { t.Fatalf("expected empty array to be not found: %v", size) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatalf("expected empty array to be not found: %v", size)
+	}
 
 	size, found, err = client.StatSize(context.Background(), "path/malformed")
-	if err == nil { t.Fatal("expected error for malformed json") }
-	if found { t.Fatalf("expected found to be false on error: %v", size) }
-	
+	if err == nil {
+		t.Fatal("expected error for malformed json")
+	}
+	if found {
+		t.Fatalf("expected found to be false on error: %v", size)
+	}
+
 	expected := []string{"rclone", "--config", "/config.conf", "lsjson", "--stat", "foo:path/1.mp3"}
 	if !reflect.DeepEqual(runner.calls[0], expected) {
 		t.Fatalf("bad args: %v", runner.calls[0])
@@ -142,24 +158,26 @@ func TestClient_WriteRemoteConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	confPath := filepath.Join(tmpDir, "rclone.conf")
 	client := NewRcloneClient(nil, "rclone", confPath, "foo", 0)
-	
+
 	validBlock := "[foo]\ntype = drive\nscope = drive\n"
 	err := client.WriteRemoteConfig(context.Background(), validBlock)
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	info, err := os.Stat(confPath)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if info.Mode().Perm() != 0600 {
 		t.Fatalf("expected 0600 mode, got %v", info.Mode().Perm())
 	}
-	
+
 	content, _ := os.ReadFile(confPath)
 	if string(content) != validBlock {
 		t.Fatalf("bad content")
 	}
-	
+
 	err = client.WriteRemoteConfig(context.Background(), "[wrong]\ntype=drive\n")
 	if err == nil {
 		t.Fatal("expected error for wrong section")

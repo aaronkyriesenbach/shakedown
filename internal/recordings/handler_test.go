@@ -88,6 +88,7 @@ func TestSnippetFilename(t *testing.T) {
 
 type fakeRepo struct {
 	RecordingRepository
+	failUpdateStoragePath bool
 }
 
 func (f *fakeRepo) Create(ctx context.Context, input CreateRecordingInput) (*Recording, error) {
@@ -95,6 +96,9 @@ func (f *fakeRepo) Create(ctx context.Context, input CreateRecordingInput) (*Rec
 }
 
 func (f *fakeRepo) UpdateStoragePath(ctx context.Context, id, path string) error {
+	if f.failUpdateStoragePath {
+		return context.DeadlineExceeded // arbitrary error
+	}
 	return nil
 }
 
@@ -146,5 +150,42 @@ func TestUpload_HookCalled(t *testing.T) {
 	}
 	if hookedID != "fake-id" {
 		t.Fatalf("expected hook to receive 'fake-id', got %s", hookedID)
+	}
+}
+
+func TestUpload_HookNotCalledOnDBError(t *testing.T) {
+	cfg := &config.Config{
+		StorageRoot:          t.TempDir(),
+		VideoUploadMaxSizeMB: 10,
+	}
+	store, _ := NewLocalStorage(cfg.StorageRoot)
+	svc := NewService(&fakeRepo{failUpdateStoragePath: true}, store, zap.NewNop(), 1, 1)
+	h := NewHandler(svc, cfg, zap.NewNop())
+
+	hookCalled := false
+	h.OnRecordingReady = func(id string) {
+		hookCalled = true
+	}
+
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "test.mp3")
+	part.Write([]byte{0x49, 0x44, 0x33, 0x00, 0x00})
+	writer.Close()
+
+	req := httptest.NewRequest("POST", "/", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	ctx := auth.WithUser(req.Context(), &auth.User{ID: "user1"})
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	h.upload(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d. Body: %s", w.Code, w.Body.String())
+	}
+	if hookCalled {
+		t.Fatal("expected hook NOT to be called when DB update fails, but it was")
 	}
 }
