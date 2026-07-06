@@ -1,0 +1,24 @@
+name: Release and Build Docker Image
+
+on:
+  push:
+    branches:
+      - "**"
+
+jobs:
+  release-please:
+    if: github.ref_name == 'master'
+    uses: aaronkyriesenbach/workflows/.github/workflows/release-please.yaml@master
+    permissions:
+      contents: write
+      pull-requests: write
+
+  docker:
+    needs: release-please
+    if: always() && (github.ref_name != 'master' || needs.release-please.outputs.release_created == 'true')
+    uses: aaronkyriesenbach/workflows/.github/workflows/docker-build-push.yaml@master
+    with:
+      version: ${{ needs.release-please.outputs.version }}
+    permissions:
+      contents: read
+      packages: write
