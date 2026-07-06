@@ -35,6 +35,8 @@ services:
         max-file: "3"
     environment:
       - PORT=8080
+      - CLOUD_SYNC_ENABLED=true
+      - CLOUD_SYNC_REMOTE=drive
 
   frontend:
     image: node:22-alpine
