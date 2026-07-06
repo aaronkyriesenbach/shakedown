@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -75,12 +76,7 @@ func (c *rcloneClient) RemoteExists(ctx context.Context) (bool, error) {
 	}
 	lines := strings.Split(string(out), "\n")
 	target := c.remote + ":"
-	for _, line := range lines {
-		if line == target {
-			return true, nil
-		}
-	}
-	return false, nil
+	return slices.Contains(lines, target), nil
 }
 
 func (c *rcloneClient) WriteRemoteConfig(ctx context.Context, block string) error {
@@ -154,7 +150,7 @@ func (c *rcloneClient) StatSize(ctx context.Context, remotePath string) (int64, 
 	
 	var item lsjsonItem
 	if err := json.Unmarshal(out, &item); err != nil {
-		return 0, false, nil
+		return 0, false, sanitizeError("lsjson parse", err)
 	}
 	
 	if item.IsDir {

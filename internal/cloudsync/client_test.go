@@ -129,8 +129,8 @@ func TestClient_StatSize(t *testing.T) {
 	if found { t.Fatalf("expected empty array to be not found: %v", size) }
 
 	size, found, err = client.StatSize(context.Background(), "path/malformed")
-	if err != nil { t.Fatal(err) }
-	if found { t.Fatalf("expected malformed to be not found: %v", size) }
+	if err == nil { t.Fatal("expected error for malformed json") }
+	if found { t.Fatalf("expected found to be false on error: %v", size) }
 	
 	expected := []string{"rclone", "--config", "/config.conf", "lsjson", "--stat", "foo:path/1.mp3"}
 	if !reflect.DeepEqual(runner.calls[0], expected) {
