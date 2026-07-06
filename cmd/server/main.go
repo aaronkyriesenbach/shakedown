@@ -16,6 +16,7 @@ import (
 
 	"shakedown/internal/admin"
 	"shakedown/internal/auth"
+	"shakedown/internal/cloudsync"
 	"shakedown/internal/comments"
 	"shakedown/internal/config"
 	"shakedown/internal/database"
@@ -87,6 +88,28 @@ func main() {
 		cfg.VideoProcessingTimeoutSeconds,
 	)
 	recHandler := recordings.NewHandler(recSvc, cfg, logger)
+
+	var cloudSvc *cloudsync.Service
+	if cfg.CloudSyncEnabled {
+		logger.Info("cloud sync enabled, initializing service...")
+		stateStore := cloudsync.NewPostgresStateStore(db)
+		remoteClient := cloudsync.NewRcloneClient(nil, cfg.CloudSyncRcloneBin, cfg.RcloneConfigPath, cfg.CloudSyncRemote, cfg.CloudSyncTPSLimit)
+		cloudCfg := cloudsync.Config{
+			Root:         cfg.CloudSyncRoot,
+			PathTemplate: cfg.CloudSyncPathTemplate,
+			Interval:     time.Duration(cfg.CloudSyncIntervalSeconds) * time.Second,
+			MaxWorkers:   cfg.CloudSyncMaxWorkers,
+			MaxAttempts:  cfg.CloudSyncMaxAttempts,
+			LeaseTTL:     time.Duration(cfg.CloudSyncLeaseTTLSeconds) * time.Second,
+			BackoffBase:  time.Duration(cfg.CloudSyncBackoffBaseSeconds) * time.Second,
+		}
+		cloudSvc = cloudsync.NewService(stateStore, remoteClient, recRepo, store, logger, cloudCfg)
+		recHandler.OnRecordingReady = func(id string) {
+			go cloudSvc.EnqueueRecording(context.Background(), id)
+		}
+		cloudSvc.StartScheduler(cloudCfg.Interval)
+		cloudSvc.StartRecoveryLoop(cloudCfg.Interval) // Use scheduler interval as default
+	}
 
 	songRepo := songs.NewRepository(db)
 	songHandler := songs.NewHandler(songRepo, logger)
@@ -180,6 +203,12 @@ func main() {
 	logger.Info("shutting down server...")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	if cloudSvc != nil {
+		cloudCtx, cloudCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cloudSvc.Shutdown(cloudCtx)
+		cloudCancel()
+	}
 
 	recSvc.Shutdown()
 
