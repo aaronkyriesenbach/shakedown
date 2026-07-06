@@ -90,10 +90,12 @@ func main() {
 	recHandler := recordings.NewHandler(recSvc, cfg, logger)
 
 	var cloudSvc *cloudsync.Service
+	var cloudStateStore cloudsync.StateStore
+	var cloudRemoteClient cloudsync.RemoteClient
 	if cfg.CloudSyncEnabled {
 		logger.Info("cloud sync enabled, initializing service...")
-		stateStore := cloudsync.NewPostgresStateStore(db)
-		remoteClient := cloudsync.NewRcloneClient(nil, cfg.CloudSyncRcloneBin, cfg.RcloneConfigPath, cfg.CloudSyncRemote, cfg.CloudSyncTPSLimit)
+		cloudStateStore = cloudsync.NewPostgresStateStore(db)
+		cloudRemoteClient = cloudsync.NewRcloneClient(nil, cfg.CloudSyncRcloneBin, cfg.RcloneConfigPath, cfg.CloudSyncRemote, cfg.CloudSyncTPSLimit)
 		cloudCfg := cloudsync.Config{
 			Root:         cfg.CloudSyncRoot,
 			PathTemplate: cfg.CloudSyncPathTemplate,
@@ -103,13 +105,33 @@ func main() {
 			LeaseTTL:     time.Duration(cfg.CloudSyncLeaseTTLSeconds) * time.Second,
 			BackoffBase:  time.Duration(cfg.CloudSyncBackoffBaseSeconds) * time.Second,
 		}
-		cloudSvc = cloudsync.NewService(stateStore, remoteClient, recRepo, store, logger, cloudCfg)
+		cloudSvc = cloudsync.NewService(cloudStateStore, cloudRemoteClient, recRepo, store, logger, cloudCfg)
 		recHandler.OnRecordingReady = func(id string) {
 			go cloudSvc.EnqueueRecording(context.Background(), id)
 		}
 		cloudSvc.StartScheduler(cloudCfg.Interval)
 		cloudSvc.StartRecoveryLoop(cloudCfg.Interval) // Use scheduler interval as default
 	}
+
+	// cloudProbe is a live readiness check (config validation + rclone
+	// binary/remote reachability), re-evaluated on every /status request —
+	// cheap CLI invocations, acceptable cost for an admin-only, rarely-hit
+	// endpoint, and it guarantees an admin fixing the remote via POST
+	// /remote sees it reflected on their very next GET /status with no
+	// caching/TTL staleness to reason about.
+	cloudProbe := func() (bool, string) {
+		return cloudsync.Probe(context.Background(), cloudsync.ProbeConfig{
+			Enabled:      cfg.CloudSyncEnabled,
+			Remote:       cfg.CloudSyncRemote,
+			PathTemplate: cfg.CloudSyncPathTemplate,
+		}, cloudRemoteClient)
+	}
+	// Constructed unconditionally (even when cloud sync is disabled, in
+	// which case cloudSvc/cloudStateStore/cloudRemoteClient are all nil) so
+	// GET /api/admin/sync/status always works: cloudProbe short-circuits on
+	// the "CLOUD_SYNC_ENABLED is false" check before ever touching the nil
+	// RemoteClient.
+	cloudHandler := cloudsync.NewHandler(cloudSvc, cloudRemoteClient, cloudStateStore, cfg.CloudSyncRemote, cloudProbe, logger)
 
 	songRepo := songs.NewRepository(db)
 	songHandler := songs.NewHandler(songRepo, logger)
@@ -167,6 +189,9 @@ func main() {
 		})
 		r.With(requireAuth).Route("/admin", func(r chi.Router) {
 			adminHandler.Routes(r)
+			r.Route("/sync", func(r chi.Router) {
+				cloudHandler.Routes(r)
+			})
 		})
 	})
 
