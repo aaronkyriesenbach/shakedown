@@ -231,6 +231,133 @@ func TestPostgresStateStore_ClaimLeaseCollision(t *testing.T) {
 	})
 }
 
+func TestPostgresStateStore_ListFailedSyncs(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := NewPostgresStateStore(db)
+	recRepo := recordings.NewRepository(db)
+
+	t.Run("JoinsTitle_ExcludesSoftDeleted_IncludesMidRetry_OrdersByLastAttemptDesc", func(t *testing.T) {
+		db.Exec(ctx, "TRUNCATE cloud_sync_state, recordings CASCADE")
+
+		// Row 1: a genuine Failed Sync (status='error'), oldest last_attempt_at.
+		_, recErr := setupUserAndRecording(t, db)
+		_, err := store.ClaimNew(ctx, recErr, "path-err.mp3", "owner1", time.Minute, 5)
+		if err != nil {
+			t.Fatalf("claim failed: %v", err)
+		}
+		if _, err := store.MarkError(ctx, recErr, "owner1", "copy_failed", "disk full", time.Now().Add(time.Hour)); err != nil {
+			t.Fatalf("mark error failed: %v", err)
+		}
+		if _, err := db.Exec(ctx, "UPDATE cloud_sync_state SET last_attempt_at = now() - interval '2 hours' WHERE recording_id = $1", recErr); err != nil {
+			t.Fatalf("failed to backdate last_attempt_at: %v", err)
+		}
+
+		// Row 2: mid-retry (status='syncing' AND error_class IS NOT NULL),
+		// most recent last_attempt_at -> must sort first.
+		_, recRetrying := setupUserAndRecording(t, db)
+		if _, err := store.ClaimNew(ctx, recRetrying, "path-retry.mp3", "owner1", time.Minute, 5); err != nil {
+			t.Fatalf("claim failed: %v", err)
+		}
+		if _, err := db.Exec(ctx, "UPDATE cloud_sync_state SET error_class = 'copy_failed', error = 'retrying now' WHERE recording_id = $1", recRetrying); err != nil {
+			t.Fatalf("failed to set error_class on syncing row: %v", err)
+		}
+
+		// Row 3: soft-deleted recording with status='error' -> must be excluded.
+		_, recDeleted := setupUserAndRecording(t, db)
+		if _, err := store.ClaimNew(ctx, recDeleted, "path-deleted.mp3", "owner1", time.Minute, 5); err != nil {
+			t.Fatalf("claim failed: %v", err)
+		}
+		if _, err := store.MarkError(ctx, recDeleted, "owner1", "copy_failed", "boom", time.Now().Add(time.Hour)); err != nil {
+			t.Fatalf("mark error failed: %v", err)
+		}
+		if err := recRepo.SoftDelete(ctx, recDeleted); err != nil {
+			t.Fatalf("soft delete failed: %v", err)
+		}
+
+		// Row 4: pending, not yet attempted -> not a Failed Sync, must be excluded.
+		_, recPending := setupUserAndRecording(t, db)
+		if _, err := db.Exec(ctx, `INSERT INTO cloud_sync_state (recording_id, remote_path, status) VALUES ($1, 'path-pending.mp3', 'pending')`, recPending); err != nil {
+			t.Fatalf("failed to insert pending row: %v", err)
+		}
+
+		// Row 5: synced -> must be excluded.
+		_, recSynced := setupUserAndRecording(t, db)
+		if _, err := store.ClaimNew(ctx, recSynced, "path-synced.mp3", "owner1", time.Minute, 5); err != nil {
+			t.Fatalf("claim failed: %v", err)
+		}
+		if _, err := store.MarkSynced(ctx, recSynced, "owner1", "remote-id", 100); err != nil {
+			t.Fatalf("mark synced failed: %v", err)
+		}
+
+		rows, err := store.ListFailedSyncs(ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(rows) != 2 {
+			t.Fatalf("expected 2 rows (error + mid-retry, excluding soft-deleted/pending/synced), got %d: %+v", len(rows), rows)
+		}
+
+		// Ordered by last_attempt_at DESC: the mid-retry row is most recent.
+		if rows[0].RecordingID != recRetrying {
+			t.Fatalf("expected most recent row first (recRetrying), got %s", rows[0].RecordingID)
+		}
+		if rows[0].Status != "syncing" {
+			t.Fatalf("expected mid-retry row status='syncing', got %q", rows[0].Status)
+		}
+		if rows[0].ErrorClass == nil || *rows[0].ErrorClass != "copy_failed" {
+			t.Fatalf("expected mid-retry row error_class='copy_failed', got %v", rows[0].ErrorClass)
+		}
+
+		if rows[1].RecordingID != recErr {
+			t.Fatalf("expected second row to be recErr, got %s", rows[1].RecordingID)
+		}
+		if rows[1].Status != "error" {
+			t.Fatalf("expected recErr row status='error', got %q", rows[1].Status)
+		}
+		if rows[1].Title == "" {
+			t.Fatalf("expected title to be joined from recordings, got empty string")
+		}
+		if rows[1].Error == nil || *rows[1].Error != "disk full" {
+			t.Fatalf("expected error='disk full', got %v", rows[1].Error)
+		}
+		if rows[1].Attempts != 1 {
+			t.Fatalf("expected attempts=1, got %d", rows[1].Attempts)
+		}
+		if rows[1].LastAttemptAt == nil {
+			t.Fatalf("expected last_attempt_at to be set")
+		}
+		if rows[1].NextAttemptAt == nil {
+			t.Fatalf("expected next_attempt_at to be set")
+		}
+	})
+
+	t.Run("CapsAt500", func(t *testing.T) {
+		db.Exec(ctx, "TRUNCATE cloud_sync_state, recordings CASCADE")
+
+		const total = maxFailedSyncRows + 10
+		for i := 0; i < total; i++ {
+			_, recID := setupUserAndRecording(t, db)
+			if _, err := store.ClaimNew(ctx, recID, "path-"+recID+".mp3", "owner1", time.Minute, 5); err != nil {
+				t.Fatalf("claim failed: %v", err)
+			}
+			if _, err := store.MarkError(ctx, recID, "owner1", "copy_failed", "boom", time.Now().Add(time.Hour)); err != nil {
+				t.Fatalf("mark error failed: %v", err)
+			}
+		}
+
+		rows, err := store.ListFailedSyncs(ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(rows) != maxFailedSyncRows {
+			t.Fatalf("expected cap of %d rows, got %d", maxFailedSyncRows, len(rows))
+		}
+	})
+}
+
 func TestListAllForSync(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()

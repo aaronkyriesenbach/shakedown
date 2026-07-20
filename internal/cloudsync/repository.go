@@ -45,6 +45,28 @@ type StateStore interface {
 	Heartbeat(ctx context.Context, recordingID, owner string, ttl time.Duration) (rowsAffected int64, err error)
 	RecoverExpiredLeases(ctx context.Context) (int64, error)
 	CountByStatus(ctx context.Context) (map[string]int, error)
+	ListFailedSyncs(ctx context.Context) ([]FailedSync, error)
+}
+
+// maxFailedSyncRows is the fixed safety-valve cap applied to
+// ListFailedSyncs. The Failed Syncs list is intentionally unpaginated (see
+// CONTEXT.md), so this cap exists purely to bound worst-case response size.
+const maxFailedSyncRows = 500
+
+// FailedSync is one row of the Failed Syncs list: a cloud_sync_state row
+// that is either a Failed Sync proper (status='error') or mid-retry
+// (status='syncing' AND error_class IS NOT NULL), joined with the owning
+// recording's title. See CONTEXT.md for the Failed Sync / Error Class /
+// Retry Status glossary.
+type FailedSync struct {
+	RecordingID   string
+	Title         string
+	Status        string
+	Error         *string
+	ErrorClass    *string
+	Attempts      int
+	LastAttemptAt *time.Time
+	NextAttemptAt *time.Time
 }
 
 type PostgresStateStore struct {
@@ -174,6 +196,50 @@ func (s *PostgresStateStore) RecoverExpiredLeases(ctx context.Context) (int64, e
 	`
 	tag, err := s.db.Exec(ctx, query)
 	return tag.RowsAffected(), err
+}
+
+// ListFailedSyncs returns Failed Syncs (status='error') plus mid-retry rows
+// (status='syncing' AND error_class IS NOT NULL), joined with recordings to
+// surface the title and exclude soft-deleted recordings. Ordered by
+// last_attempt_at DESC and capped at maxFailedSyncRows.
+func (s *PostgresStateStore) ListFailedSyncs(ctx context.Context) ([]FailedSync, error) {
+	query := `
+		SELECT cs.recording_id, r.title, cs.status, cs.error, cs.error_class,
+		       cs.attempts, cs.last_attempt_at, cs.next_attempt_at
+		FROM cloud_sync_state cs
+		JOIN recordings r ON r.id = cs.recording_id
+		WHERE r.deleted_at IS NULL
+		  AND (cs.status = 'error' OR (cs.status = 'syncing' AND cs.error_class IS NOT NULL))
+		ORDER BY cs.last_attempt_at DESC
+		LIMIT $1
+	`
+	rows, err := s.db.Query(ctx, query, maxFailedSyncRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make([]FailedSync, 0)
+	for rows.Next() {
+		var row FailedSync
+		if err := rows.Scan(
+			&row.RecordingID,
+			&row.Title,
+			&row.Status,
+			&row.Error,
+			&row.ErrorClass,
+			&row.Attempts,
+			&row.LastAttemptAt,
+			&row.NextAttemptAt,
+		); err != nil {
+			return nil, err
+		}
+		results = append(results, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 func (s *PostgresStateStore) CountByStatus(ctx context.Context) (map[string]int, error) {

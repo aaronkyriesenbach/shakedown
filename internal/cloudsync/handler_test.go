@@ -3,6 +3,7 @@ package cloudsync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -144,6 +145,122 @@ func TestHandler_Status_Enabled_Schema(t *testing.T) {
 		if strings.Contains(lower, suspicious) {
 			t.Fatalf("status response leaked suspicious substring %q: %s", suspicious, w.Body.String())
 		}
+	}
+}
+
+func TestHandler_FailedSyncs_Disabled(t *testing.T) {
+	h := NewHandler(nil, nil, nil, "", disabledStatusFn, enabledFalse, zap.NewNop())
+	w := httptest.NewRecorder()
+	h.failedSyncs(w, adminRequest(http.MethodGet, "/failed", nil))
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", w.Code)
+	}
+}
+
+func TestHandler_FailedSyncs_ResponseShapeAndRetryStatus(t *testing.T) {
+	now := time.Now()
+	nextAttempt := now.Add(time.Hour)
+	errClassA := "copy_failed"
+	errMsgA := "disk full"
+	errClassB := "verify_failed"
+	errMsgB := "size mismatch"
+
+	store := newFakeStateStore()
+	store.listFailedSyncsResult = []FailedSync{
+		{
+			RecordingID:   "rec-exhausted",
+			Title:         "Show A",
+			Status:        "error",
+			ErrorClass:    &errClassA,
+			Error:         &errMsgA,
+			Attempts:      5,
+			LastAttemptAt: &now,
+			NextAttemptAt: &nextAttempt,
+		},
+		{
+			RecordingID:   "rec-retrying",
+			Title:         "Show B",
+			Status:        "error",
+			ErrorClass:    &errClassB,
+			Error:         &errMsgB,
+			Attempts:      1,
+			LastAttemptAt: &now,
+			NextAttemptAt: &nextAttempt,
+		},
+		{
+			RecordingID:   "rec-midretry",
+			Title:         "Show C",
+			Status:        "syncing",
+			ErrorClass:    &errClassA,
+			Error:         &errMsgA,
+			Attempts:      2,
+			LastAttemptAt: &now,
+			NextAttemptAt: nil,
+		},
+	}
+
+	svc := &Service{cfg: Config{MaxAttempts: 5}}
+	h := NewHandler(svc, nil, store, "remote", enabledStatusFn, enabledTrue, zap.NewNop())
+
+	w := httptest.NewRecorder()
+	h.failedSyncs(w, adminRequest(http.MethodGet, "/failed", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body struct {
+		FailedSyncs []map[string]any `json:"failed_syncs"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(body.FailedSyncs) != 3 {
+		t.Fatalf("expected 3 rows, got %d: %v", len(body.FailedSyncs), body.FailedSyncs)
+	}
+
+	row0 := body.FailedSyncs[0]
+	if row0["recording_id"] != "rec-exhausted" {
+		t.Fatalf("expected rec-exhausted first, got %v", row0["recording_id"])
+	}
+	if row0["title"] != "Show A" {
+		t.Fatalf("expected title Show A, got %v", row0["title"])
+	}
+	if row0["error_class"] != errClassA {
+		t.Fatalf("expected error_class copy_failed, got %v", row0["error_class"])
+	}
+	if row0["error"] != errMsgA {
+		t.Fatalf("expected error disk full, got %v", row0["error"])
+	}
+	if row0["retry_status"] != "exhausted" {
+		t.Fatalf("expected retry_status exhausted for attempts=5/max=5, got %v", row0["retry_status"])
+	}
+
+	row1 := body.FailedSyncs[1]
+	if row1["retry_status"] != "retrying" {
+		t.Fatalf("expected retry_status retrying for attempts=1/max=5, got %v", row1["retry_status"])
+	}
+
+	row2 := body.FailedSyncs[2]
+	if row2["retry_status"] != "retrying_now" {
+		t.Fatalf("expected retry_status retrying_now for mid-retry (status=syncing) row, got %v", row2["retry_status"])
+	}
+	if row2["next_attempt_at"] != nil {
+		t.Fatalf("expected next_attempt_at nil for mid-retry row, got %v", row2["next_attempt_at"])
+	}
+}
+
+func TestHandler_FailedSyncs_StoreErrorReturns500(t *testing.T) {
+	store := newFakeStateStore()
+	store.listFailedSyncsErr = errors.New("boom")
+
+	h := NewHandler(nil, nil, store, "remote", enabledStatusFn, enabledTrue, zap.NewNop())
+	w := httptest.NewRecorder()
+	h.failedSyncs(w, adminRequest(http.MethodGet, "/failed", nil))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
 	}
 }
 
