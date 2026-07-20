@@ -72,6 +72,7 @@ func NewHandler(svc *Service, client RemoteClient, store StateStore, remoteName 
 // outer requireAuth group by the caller).
 func (h *Handler) Routes(r chi.Router) {
 	r.With(auth.RequireAdmin).Get("/status", h.status)
+	r.With(auth.RequireAdmin).Get("/failed", h.failedSyncs)
 	r.With(auth.RequireAdmin).Post("/run", h.run)
 	r.With(auth.RequireAdmin).Post("/test", h.test)
 	r.With(auth.RequireAdmin).Post("/remote", h.remote)
@@ -115,6 +116,85 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		},
 		"in_progress":       counts["syncing"] > 0,
 		"last_reconcile_at": h.getLastReconcileAt(),
+	})
+}
+
+// failedSyncRow is the wire shape for one row of the Failed Syncs list. See
+// CONTEXT.md for the Failed Sync / Error Class / Retry Status glossary.
+type failedSyncRow struct {
+	RecordingID   string     `json:"recording_id"`
+	Title         string     `json:"title"`
+	ErrorClass    *string    `json:"error_class"`
+	Error         *string    `json:"error"`
+	Attempts      int        `json:"attempts"`
+	LastAttemptAt *time.Time `json:"last_attempt_at"`
+	NextAttemptAt *time.Time `json:"next_attempt_at"`
+	// RetryStatus is one of "retrying" (still eligible for automatic retry),
+	// "retrying_now" (a retry attempt is in flight this instant), or
+	// "exhausted" (attempts >= max_attempts, automatic retries have given up).
+	RetryStatus string `json:"retry_status"`
+}
+
+const (
+	retryStatusRetrying    = "retrying"
+	retryStatusRetryingNow = "retrying_now"
+	retryStatusExhausted   = "exhausted"
+)
+
+// deriveRetryStatus computes the Retry Status for a Failed Sync row: a
+// mid-retry row (status='syncing') is always "retrying_now" regardless of
+// attempts, otherwise it's "retrying" if still under max_attempts or
+// "exhausted" once attempts have caught up.
+func deriveRetryStatus(status string, attempts, maxAttempts int) string {
+	if status == "syncing" {
+		return retryStatusRetryingNow
+	}
+	if attempts < maxAttempts {
+		return retryStatusRetrying
+	}
+	return retryStatusExhausted
+}
+
+// failedSyncs returns the read-only Failed Syncs list: status='error' rows
+// plus mid-retry rows (status='syncing' AND error_class IS NOT NULL),
+// unpaginated and capped (see ListFailedSyncs). Gated on the same full
+// readiness probe as /status, since this list is only meaningful once cloud
+// sync is actually enabled and configured.
+func (h *Handler) failedSyncs(w http.ResponseWriter, r *http.Request) {
+	enabled, reason := h.statusFn()
+	if !enabled {
+		writeJSONError(w, http.StatusConflict, reason)
+		return
+	}
+
+	rows, err := h.store.ListFailedSyncs(r.Context())
+	if err != nil {
+		h.logger.Error("failedSyncs: ListFailedSyncs failed", zap.Error(err))
+		writeJSONError(w, http.StatusInternalServerError, "failed to load failed syncs")
+		return
+	}
+
+	maxAttempts := 0
+	if h.svc != nil {
+		maxAttempts = h.svc.cfg.MaxAttempts
+	}
+
+	out := make([]failedSyncRow, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, failedSyncRow{
+			RecordingID:   row.RecordingID,
+			Title:         row.Title,
+			ErrorClass:    row.ErrorClass,
+			Error:         row.Error,
+			Attempts:      row.Attempts,
+			LastAttemptAt: row.LastAttemptAt,
+			NextAttemptAt: row.NextAttemptAt,
+			RetryStatus:   deriveRetryStatus(row.Status, row.Attempts, maxAttempts),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"failed_syncs": out,
 	})
 }
 
