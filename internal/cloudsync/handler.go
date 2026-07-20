@@ -73,6 +73,7 @@ func NewHandler(svc *Service, client RemoteClient, store StateStore, remoteName 
 func (h *Handler) Routes(r chi.Router) {
 	r.With(auth.RequireAdmin).Get("/status", h.status)
 	r.With(auth.RequireAdmin).Get("/failed", h.failedSyncs)
+	r.With(auth.RequireAdmin).Post("/failed/{recordingID}/retry", h.retry)
 	r.With(auth.RequireAdmin).Post("/run", h.run)
 	r.With(auth.RequireAdmin).Post("/test", h.test)
 	r.With(auth.RequireAdmin).Post("/remote", h.remote)
@@ -196,6 +197,51 @@ func (h *Handler) failedSyncs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"failed_syncs": out,
 	})
+}
+
+// retry forces one immediate re-attempt of a single Failed Sync (see
+// CONTEXT.md's "Retry" glossary entry), regardless of Retry Status --
+// unlike /run, it bypasses the attempts < max_attempts claim gate via
+// Service.ForceRetry / StateStore.ClaimRetry. It responds immediately
+// (202-style, mirroring /run) and the actual attempt runs via the existing
+// background dispatch path (Service.dispatchWorker).
+func (h *Handler) retry(w http.ResponseWriter, r *http.Request) {
+	enabled, reason := h.statusFn()
+	if !enabled {
+		writeJSONError(w, http.StatusConflict, reason)
+		return
+	}
+
+	recordingID := chi.URLParam(r, "recordingID")
+	if recordingID == "" {
+		writeJSONError(w, http.StatusBadRequest, "recording_id is required")
+		return
+	}
+
+	// Synchronously confirm this recording has a tracked Failed Sync row
+	// before dispatching, so a bad recording_id gets an immediate 404
+	// instead of silently no-oping in the background goroutine. A row that
+	// is currently mid-retry (status='syncing' under a live lease) is left
+	// to the background ClaimRetry call to no-op on -- the request still
+	// responds 202, since Retry is idempotent-ish while already in flight.
+	state, err := h.store.Get(r.Context(), recordingID)
+	if err != nil {
+		h.logger.Error("retry: Get failed", zap.Error(err), zap.String("recording_id", recordingID))
+		writeJSONError(w, http.StatusInternalServerError, "failed to load recording state")
+		return
+	}
+	if state == nil {
+		writeJSONError(w, http.StatusNotFound, "no failed sync found for this recording")
+		return
+	}
+
+	go func() {
+		if err := h.svc.ForceRetry(context.Background(), recordingID); err != nil {
+			h.logger.Error("force retry failed", zap.Error(err), zap.String("recording_id", recordingID))
+		}
+	}()
+
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (h *Handler) run(w http.ResponseWriter, r *http.Request) {

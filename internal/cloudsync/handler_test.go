@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -437,6 +439,207 @@ func TestHandler_Remote_Malformed(t *testing.T) {
 	if errBody["error"] == "" {
 		t.Fatalf("expected non-empty error field, got %v", errBody)
 	}
+}
+
+func newRetryRouter(h *Handler) http.Handler {
+	r := chi.NewRouter()
+	r.Post("/failed/{recordingID}/retry", h.retry)
+	return r
+}
+
+func TestHandler_Retry_Disabled(t *testing.T) {
+	h := NewHandler(nil, nil, nil, "", disabledStatusFn, enabledFalse, zap.NewNop())
+	r := newRetryRouter(h)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, adminRequest(http.MethodPost, "/failed/rec-1/retry", nil))
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", w.Code)
+	}
+}
+
+func TestHandler_Retry_NotFoundRecording(t *testing.T) {
+	store := newFakeStateStore()
+	h := NewHandler(nil, nil, store, "remote", enabledStatusFn, enabledTrue, zap.NewNop())
+	r := newRetryRouter(h)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, adminRequest(http.MethodPost, "/failed/rec-missing/retry", nil))
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("expected JSON error body: %v", err)
+	}
+	if body["error"] == "" {
+		t.Fatalf("expected non-empty error field, got %v", body)
+	}
+}
+
+func TestHandler_Retry_StoreGetErrorReturns500(t *testing.T) {
+	store := &fakeGetErrStateStore{fakeStateStore: newFakeStateStore(), getErr: errors.New("boom")}
+	h := NewHandler(nil, nil, store, "remote", enabledStatusFn, enabledTrue, zap.NewNop())
+	r := newRetryRouter(h)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, adminRequest(http.MethodPost, "/failed/rec-1/retry", nil))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+}
+
+// TestHandler_Retry_Success_AcceptedAndBypassesMaxAttempts covers the core
+// happy path: a Failed Sync whose attempts already meets/exceeds
+// max_attempts (Exhausted) still gets retried -- the endpoint responds
+// immediately, and the background dispatch (via Service.ForceRetry /
+// StateStore.ClaimRetry) bypasses the attempts < max_attempts gate,
+// increments attempts further, and completes the sync.
+func TestHandler_Retry_Success_AcceptedAndBypassesMaxAttempts(t *testing.T) {
+	store := newFakeStateStore()
+	now := time.Now()
+	errClass := "copy_failed"
+	store.states["rec-1"] = &SyncState{
+		RecordingID:   "rec-1",
+		RemotePath:    "path.mp3",
+		Status:        "error",
+		ErrorClass:    &errClass,
+		Attempts:      6, // already >= MaxAttempts below (Exhausted)
+		LastAttemptAt: &now,
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "rec-1.mp3"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	lister := &fakeLister{
+		getByIDFn: func(ctx context.Context, id string) (*recordings.Recording, error) {
+			return &recordings.Recording{ID: id, StoragePath: "rec-1.mp3"}, nil
+		},
+	}
+	client := &fakeRemoteClient{
+		statFunc: func(ctx context.Context, remotePath string) (int64, bool, error) {
+			return int64(len("hello")), true, nil
+		},
+	}
+	storage := &fakeStorage{dir: dir}
+	svc := NewService(store, client, lister, storage, zap.NewNop(), Config{
+		MaxWorkers: 1, MaxAttempts: 5, LeaseTTL: time.Minute, BackoffBase: time.Millisecond,
+	})
+
+	h := NewHandler(svc, client, store, "remote", enabledStatusFn, enabledTrue, zap.NewNop())
+	r := newRetryRouter(h)
+
+	start := time.Now()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, adminRequest(http.MethodPost, "/failed/rec-1/retry", nil))
+	elapsed := time.Since(start)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+	if elapsed >= 80*time.Millisecond {
+		t.Fatalf("expected retry to return immediately (async), took %v", elapsed)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	var state *SyncState
+	for time.Now().Before(deadline) {
+		state, _ = store.Get(context.Background(), "rec-1")
+		if state != nil && state.Status == "synced" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if state == nil || state.Status != "synced" {
+		t.Fatalf("expected retry to bypass max_attempts and eventually succeed, got %+v", state)
+	}
+	if state.Attempts != 7 {
+		t.Fatalf("expected attempts to keep incrementing honestly (6 -> 7) despite exceeding max_attempts=5, got %d", state.Attempts)
+	}
+}
+
+// TestHandler_Retry_AlreadyInProgress_RaceIsSafeNoOp covers the
+// already-in-progress race: a Retry click against a row that is currently
+// mid-retry under a live lease (retry_status="retrying_now") must still
+// respond 202 immediately, and the background ClaimRetry call must no-op
+// rather than stomping on the in-flight attempt (owner/attempts unchanged).
+func TestHandler_Retry_AlreadyInProgress_RaceIsSafeNoOp(t *testing.T) {
+	store := newFakeStateStore()
+	futureLease := time.Now().Add(time.Hour)
+	errClass := "copy_failed"
+	owner := "other-in-flight-owner"
+	store.states["rec-1"] = &SyncState{
+		RecordingID:    "rec-1",
+		RemotePath:     "path.mp3",
+		Status:         "syncing",
+		ErrorClass:     &errClass,
+		Attempts:       2,
+		LeaseOwner:     &owner,
+		LeaseExpiresAt: &futureLease,
+	}
+
+	lister := &fakeLister{
+		getByIDFn: func(ctx context.Context, id string) (*recordings.Recording, error) {
+			return &recordings.Recording{ID: id, StoragePath: "rec-1.mp3"}, nil
+		},
+	}
+	svc := NewService(store, &fakeRemoteClient{}, lister, &fakeStorage{dir: t.TempDir()}, zap.NewNop(), Config{
+		MaxWorkers: 1, MaxAttempts: 5, LeaseTTL: time.Minute, BackoffBase: time.Millisecond,
+	})
+	h := NewHandler(svc, &fakeRemoteClient{}, store, "remote", enabledStatusFn, enabledTrue, zap.NewNop())
+	r := newRetryRouter(h)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, adminRequest(http.MethodPost, "/failed/rec-1/retry", nil))
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 even when a retry is already in flight, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Wait for the background ForceRetry call to actually run (and no-op).
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		store.mu.Lock()
+		claims := store.claims
+		store.mu.Unlock()
+		if claims >= 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// Give the (already-observed) claim attempt a moment to fully settle.
+	time.Sleep(20 * time.Millisecond)
+
+	state, _ := store.Get(context.Background(), "rec-1")
+	if state == nil {
+		t.Fatalf("expected state to still exist")
+	}
+	if state.Attempts != 2 {
+		t.Fatalf("expected attempts to remain unchanged at 2 (in-flight retry's live lease must not be stolen), got %d", state.Attempts)
+	}
+	if state.LeaseOwner == nil || *state.LeaseOwner != owner {
+		t.Fatalf("expected original in-flight owner to remain, got %v", state.LeaseOwner)
+	}
+	if state.Status != "syncing" {
+		t.Fatalf("expected status to remain 'syncing', got %q", state.Status)
+	}
+}
+
+// fakeGetErrStateStore wraps fakeStateStore to force Get to return an error,
+// for exercising the retry handler's 500 path.
+type fakeGetErrStateStore struct {
+	*fakeStateStore
+	getErr error
+}
+
+func (f *fakeGetErrStateStore) Get(ctx context.Context, recordingID string) (*SyncState, error) {
+	return nil, f.getErr
 }
 
 func TestHandler_Routes_SelfAppliesRequireAdmin(t *testing.T) {
