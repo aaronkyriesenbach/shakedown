@@ -3,7 +3,7 @@ import type { ChangeEvent } from 'react';
 import { Cloud, CloudOff, RefreshCw, CheckCircle2, XCircle, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useSyncStatus, useRunSync, useTestRemote, useSaveRemote, useFailedSyncs } from '@/api/cloudsync';
+import { useSyncStatus, useRunSync, useTestRemote, useSaveRemote, useFailedSyncs, useRetryFailedSync } from '@/api/cloudsync';
 import type { FailedSync, RetryStatus } from '@/api/cloudsync';
 import { ApiError } from '@/api/client';
 
@@ -34,11 +34,17 @@ function retryStatusBadgeClassName(status: RetryStatus): string {
 }
 
 // FailedSyncRow renders a single Failed Sync: title, Error Class, the
-// free-text error detail, and a Retry Status indicator. Deliberately kept
-// as its own row component (rather than inlining a per-recording action
-// awkwardly) so a follow-up ticket can add a Retry button here without
-// reshaping this list.
+// free-text error detail, a Retry Status indicator, and a Retry button.
+// The Retry button is available regardless of Retry Status (Retrying or
+// Exhausted alike) -- unlike Sync Now, which only re-claims still-Retrying
+// rows. After a click, the row is expected to remain visible showing
+// "Retrying now..." (retry_status becomes "retrying_now" on the next
+// Failed Syncs refetch) until it clears (success) or reappears with an
+// updated cause (failed again).
 function FailedSyncRow({ row }: { row: FailedSync }) {
+  const retry = useRetryFailedSync();
+  const isRetryingNow = row.retry_status === 'retrying_now';
+
   return (
     <div className="flex flex-col gap-2 rounded-md border bg-background/60 p-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0 space-y-1">
@@ -53,10 +59,26 @@ function FailedSyncRow({ row }: { row: FailedSync }) {
           Attempts: {row.attempts}
           {row.last_attempt_at && ` · Last attempt: ${new Date(row.last_attempt_at).toLocaleString()}`}
         </p>
+        {retry.isError && (
+          <p className="text-xs text-destructive">
+            {retry.error instanceof ApiError ? retry.error.userMessage : retry.error.message}
+          </p>
+        )}
       </div>
-      <Badge variant="outline" className={retryStatusBadgeClassName(row.retry_status)}>
-        {retryStatusLabel(row.retry_status)}
-      </Badge>
+      <div className="flex shrink-0 items-center gap-2">
+        <Badge variant="outline" className={retryStatusBadgeClassName(row.retry_status)}>
+          {retryStatusLabel(row.retry_status)}
+        </Badge>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => retry.mutate(row.recording_id)}
+          disabled={isRetryingNow || retry.isPending}
+        >
+          <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isRetryingNow || retry.isPending ? 'animate-spin' : ''}`} />
+          {isRetryingNow ? 'Retrying now…' : 'Retry'}
+        </Button>
+      </div>
     </div>
   );
 }

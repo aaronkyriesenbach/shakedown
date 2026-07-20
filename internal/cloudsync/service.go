@@ -156,6 +156,47 @@ func (s *Service) EnqueueRecording(ctx context.Context, recordingID string) erro
 	return nil
 }
 
+// ForceRetry forces one immediate re-attempt of a single Failed Sync,
+// bypassing the attempts < max_attempts claim gate via StateStore.ClaimRetry
+// (see ADR docs/adr/0001-manual-retry-bypasses-max-attempts.md). attempts is
+// not reset. If the recording is no longer found (e.g. soft-deleted since
+// it was listed as a Failed Sync) or the row can't be claimed right now
+// (already actively syncing under a live lease), this is a no-op: the
+// caller has already responded to the admin asynchronously, so there is no
+// error to surface synchronously here.
+func (s *Service) ForceRetry(ctx context.Context, recordingID string) error {
+	rec, err := s.lister.GetByID(ctx, recordingID)
+	if err != nil {
+		return err
+	}
+	if rec == nil {
+		s.logger.Warn("force retry: recording not found, skipping", zap.String("recording_id", recordingID))
+		return nil
+	}
+
+	localAbsPath, eligible, ineligibleReason := s.checkEligibility(recordings.SyncCandidate{
+		ID:          rec.ID,
+		StoragePath: rec.StoragePath,
+	})
+
+	claim, err := s.store.ClaimRetry(ctx, recordingID, s.leaseOwner, s.cfg.LeaseTTL)
+	if err != nil {
+		return err
+	}
+	if !claim.Claimed {
+		return nil
+	}
+
+	if !eligible {
+		nextAttempt := time.Now().Add(s.getBackoff(claim.Attempts))
+		s.markErrorSafely(recordingID, "local_missing", ineligibleReason, nextAttempt)
+		return nil
+	}
+
+	s.dispatchWorker(recordingID, localAbsPath, claim)
+	return nil
+}
+
 func (s *Service) getBackoff(attempts int) time.Duration {
 	if attempts < 0 {
 		attempts = 0

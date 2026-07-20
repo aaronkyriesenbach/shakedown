@@ -231,6 +231,152 @@ func TestPostgresStateStore_ClaimLeaseCollision(t *testing.T) {
 	})
 }
 
+func TestPostgresStateStore_ClaimRetry(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := NewPostgresStateStore(db)
+
+	t.Run("BypassesMaxAttemptsGate_ReclaimsExhaustedRow", func(t *testing.T) {
+		db.Exec(ctx, "TRUNCATE cloud_sync_state, recordings CASCADE")
+		_, recID := setupUserAndRecording(t, db)
+
+		owner := "owner1"
+		// Claim and exhaust: attempts reaches max_attempts (1), then mark error.
+		res, err := store.ClaimNew(ctx, recID, "path1.mp3", owner, time.Minute, 1)
+		if err != nil || !res.Claimed {
+			t.Fatalf("expected initial claim to succeed: err=%v claimed=%v", err, res.Claimed)
+		}
+		if _, err := store.MarkError(ctx, recID, owner, "copy_failed", "disk full", time.Now().Add(time.Hour)); err != nil {
+			t.Fatalf("mark error failed: %v", err)
+		}
+
+		// A normal ClaimNew must NOT be able to reclaim this row: attempts (1) >= max_attempts (1).
+		blocked, err := store.ClaimNew(ctx, recID, "path1.mp3", "owner2", time.Minute, 1)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if blocked.Claimed {
+			t.Fatal("expected ClaimNew to respect the max_attempts gate and refuse to reclaim an Exhausted row")
+		}
+
+		// ClaimRetry bypasses the gate and reclaims the same Exhausted row,
+		// reusing its existing remote_path and incrementing (not resetting) attempts.
+		res2, err := store.ClaimRetry(ctx, recID, "owner3", time.Minute)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res2.Claimed {
+			t.Fatal("expected ClaimRetry to bypass the max_attempts gate and reclaim the Exhausted row")
+		}
+		if res2.RemotePath != "path1.mp3" {
+			t.Fatalf("expected ClaimRetry to reuse the existing remote_path, got %q", res2.RemotePath)
+		}
+		if res2.Attempts != 2 {
+			t.Fatalf("expected attempts to increment from 1 to 2 (not reset), got %d", res2.Attempts)
+		}
+
+		state, err := store.Get(ctx, recID)
+		if err != nil {
+			t.Fatalf("unexpected error getting state: %v", err)
+		}
+		if state.Status != "syncing" {
+			t.Fatalf("expected status='syncing' after ClaimRetry, got %q", state.Status)
+		}
+		if state.LeaseOwner == nil || *state.LeaseOwner != "owner3" {
+			t.Fatalf("expected lease_owner='owner3', got %v", state.LeaseOwner)
+		}
+	})
+
+	t.Run("RefusesToStealALiveLease", func(t *testing.T) {
+		db.Exec(ctx, "TRUNCATE cloud_sync_state, recordings CASCADE")
+		_, recID := setupUserAndRecording(t, db)
+
+		owner := "owner1"
+		res, err := store.ClaimNew(ctx, recID, "path1.mp3", owner, time.Minute, 5)
+		if err != nil || !res.Claimed {
+			t.Fatalf("expected initial claim to succeed: err=%v claimed=%v", err, res.Claimed)
+		}
+
+		// The row is mid-retry (status='syncing') under a live (not yet expired) lease.
+		res2, err := store.ClaimRetry(ctx, recID, "owner2", time.Minute)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res2.Claimed {
+			t.Fatal("expected ClaimRetry to refuse to steal a live in-flight lease")
+		}
+
+		state, err := store.Get(ctx, recID)
+		if err != nil {
+			t.Fatalf("unexpected error getting state: %v", err)
+		}
+		if state.LeaseOwner == nil || *state.LeaseOwner != owner {
+			t.Fatalf("expected original owner to remain, got %v", state.LeaseOwner)
+		}
+		if state.Attempts != 1 {
+			t.Fatalf("expected attempts to remain unchanged at 1, got %d", state.Attempts)
+		}
+	})
+
+	t.Run("ReclaimsExpiredMidRetryLease", func(t *testing.T) {
+		db.Exec(ctx, "TRUNCATE cloud_sync_state, recordings CASCADE")
+		_, recID := setupUserAndRecording(t, db)
+
+		owner := "owner1"
+		res, err := store.ClaimNew(ctx, recID, "path1.mp3", owner, -time.Minute, 5) // negative TTL -> already expired
+		if err != nil || !res.Claimed {
+			t.Fatalf("expected initial claim to succeed: err=%v claimed=%v", err, res.Claimed)
+		}
+
+		res2, err := store.ClaimRetry(ctx, recID, "owner2", time.Minute)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res2.Claimed {
+			t.Fatal("expected ClaimRetry to reclaim a mid-retry row whose lease has expired")
+		}
+		if res2.Attempts != 2 {
+			t.Fatalf("expected attempts to increment from 1 to 2, got %d", res2.Attempts)
+		}
+	})
+
+	t.Run("NoRowReturnsNotClaimedWithoutError", func(t *testing.T) {
+		db.Exec(ctx, "TRUNCATE cloud_sync_state, recordings CASCADE")
+
+		res, err := store.ClaimRetry(ctx, uuid.NewString(), "owner1", time.Minute)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Claimed {
+			t.Fatal("expected Claimed=false for a recording_id with no cloud_sync_state row")
+		}
+	})
+
+	t.Run("RefusesToClaimASyncedRow", func(t *testing.T) {
+		db.Exec(ctx, "TRUNCATE cloud_sync_state, recordings CASCADE")
+		_, recID := setupUserAndRecording(t, db)
+
+		owner := "owner1"
+		res, err := store.ClaimNew(ctx, recID, "path1.mp3", owner, time.Minute, 5)
+		if err != nil || !res.Claimed {
+			t.Fatalf("expected initial claim to succeed: err=%v claimed=%v", err, res.Claimed)
+		}
+		if _, err := store.MarkSynced(ctx, recID, owner, "remote-id", 100); err != nil {
+			t.Fatalf("mark synced failed: %v", err)
+		}
+
+		res2, err := store.ClaimRetry(ctx, recID, "owner2", time.Minute)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res2.Claimed {
+			t.Fatal("expected ClaimRetry to refuse to reclaim an already-synced row")
+		}
+	})
+}
+
 func TestPostgresStateStore_ListFailedSyncs(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
