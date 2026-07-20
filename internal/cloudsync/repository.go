@@ -39,6 +39,14 @@ type SyncState struct {
 
 type StateStore interface {
 	ClaimNew(ctx context.Context, recordingID, remotePath, owner string, leaseTTL time.Duration, maxAttempts int) (ClaimResult, error)
+	// ClaimRetry force-claims an existing cloud_sync_state row for one
+	// immediate re-attempt, bypassing the attempts < max_attempts gate (see
+	// ADR docs/adr/0001-manual-retry-bypasses-max-attempts.md). It reuses the
+	// row's existing remote_path and does not reset attempts. It only claims
+	// rows that already exist and are not already actively being synced
+	// under a live lease (status='error', or status='syncing' with an
+	// expired lease) -- it never creates a new tracked row.
+	ClaimRetry(ctx context.Context, recordingID, owner string, leaseTTL time.Duration) (ClaimResult, error)
 	Get(ctx context.Context, recordingID string) (*SyncState, error)
 	MarkSynced(ctx context.Context, recordingID, owner, remoteFileID string, remoteSize int64) (int64, error)
 	MarkError(ctx context.Context, recordingID, owner, errClass, errMsg string, nextAttemptAt time.Time) (int64, error)
@@ -102,6 +110,41 @@ func (s *PostgresStateStore) ClaimNew(ctx context.Context, recordingID, remotePa
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "uq_cloud_sync_remote_path" {
 			return ClaimResult{}, ErrRemotePathConflict
+		}
+		return ClaimResult{}, err
+	}
+
+	return ClaimResult{
+		Claimed:    true,
+		RemotePath: retPath,
+		Attempts:   attempts,
+	}, nil
+}
+
+// ClaimRetry force-claims recordingID's existing cloud_sync_state row for
+// one immediate re-attempt, deliberately omitting the attempts < max_attempts
+// clause present in ClaimNew (see ADR 0001). attempts is incremented, never
+// reset. Only claims a row that is a genuine Failed Sync (status='error')
+// or mid-retry with an expired lease (status='syncing' AND lease_expires_at
+// < now()) -- a row currently held under a live lease is left alone so a
+// concurrent Retry click or in-flight automatic attempt is not stomped on.
+func (s *PostgresStateStore) ClaimRetry(ctx context.Context, recordingID, owner string, leaseTTL time.Duration) (ClaimResult, error) {
+	query := `
+		UPDATE cloud_sync_state
+		SET status='syncing', attempts=attempts+1, last_attempt_at=now(),
+		    lease_owner=$2, lease_expires_at=now()+$3::interval
+		WHERE recording_id=$1
+		  AND (status='error' OR (status='syncing' AND lease_expires_at < now()))
+		RETURNING remote_path, attempts
+	`
+
+	var retPath string
+	var attempts int
+
+	err := s.db.QueryRow(ctx, query, recordingID, owner, leaseTTL).Scan(&retPath, &attempts)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ClaimResult{Claimed: false}, nil
 		}
 		return ClaimResult{}, err
 	}

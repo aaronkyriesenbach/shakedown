@@ -70,6 +70,31 @@ func (f *fakeStateStore) ClaimNew(ctx context.Context, recordingID, remotePath, 
 	return ClaimResult{Claimed: true, RemotePath: remotePath, Attempts: 1}, nil
 }
 
+func (f *fakeStateStore) ClaimRetry(ctx context.Context, recordingID, owner string, leaseTTL time.Duration) (ClaimResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.claims++
+
+	s, ok := f.states[recordingID]
+	if !ok {
+		return ClaimResult{Claimed: false}, nil
+	}
+	if s.Status == "syncing" && s.LeaseExpiresAt != nil && time.Now().Before(*s.LeaseExpiresAt) {
+		return ClaimResult{Claimed: false}, nil
+	}
+	if s.Status != "error" && s.Status != "syncing" {
+		return ClaimResult{Claimed: false}, nil
+	}
+
+	s.Status = "syncing"
+	s.Attempts++
+	ownerStr := owner
+	s.LeaseOwner = &ownerStr
+	expires := time.Now().Add(leaseTTL)
+	s.LeaseExpiresAt = &expires
+	return ClaimResult{Claimed: true, RemotePath: s.RemotePath, Attempts: s.Attempts}, nil
+}
+
 func (f *fakeStateStore) Get(ctx context.Context, recordingID string) (*SyncState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -158,6 +183,7 @@ func (f *fakeRemoteClient) StatSize(ctx context.Context, remotePath string) (int
 type fakeLister struct {
 	candidates []recordings.SyncCandidate
 	calls      int32
+	getByIDFn  func(ctx context.Context, id string) (*recordings.Recording, error)
 }
 
 func (f *fakeLister) ListAllForSync(ctx context.Context, afterID string, limit int) ([]recordings.SyncCandidate, error) {
@@ -170,6 +196,9 @@ func (f *fakeLister) ListAllForSync(ctx context.Context, afterID string, limit i
 }
 
 func (f *fakeLister) GetByID(ctx context.Context, id string) (*recordings.Recording, error) {
+	if f.getByIDFn != nil {
+		return f.getByIDFn(ctx, id)
+	}
 	return nil, nil
 }
 

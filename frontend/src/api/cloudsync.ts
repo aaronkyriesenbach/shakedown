@@ -52,12 +52,16 @@ export function useSyncStatus() {
 // useFailedSyncs fetches the Failed Syncs list on demand (e.g. once the
 // failures section is expanded), separately from the aggregate /status
 // endpoint. Pass `enabled: false` to defer fetching until the admin
-// actually wants to see the list.
+// actually wants to see the list. Polls while enabled so a row that was
+// force-retried (via useRetryFailedSync) keeps reflecting its live outcome
+// -- "Retrying now..." until it clears (success) or reappears with an
+// updated cause (failed again) -- without requiring another manual action.
 export function useFailedSyncs(enabled: boolean) {
   return useQuery({
     queryKey: cloudSyncKeys.failedSyncs(),
     queryFn: () => apiFetch<{ failed_syncs: FailedSync[] }>('/api/admin/sync/failed'),
     enabled,
+    refetchInterval: enabled ? 5000 : false,
   });
 }
 
@@ -67,6 +71,27 @@ export function useRunSync() {
   return useMutation({
     mutationFn: () => apiFetch<void>('/api/admin/sync/run', { method: 'POST' }),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: cloudSyncKeys.status() });
+    },
+  });
+}
+
+// useRetryFailedSync forces one immediate re-attempt of a single Failed
+// Sync (see CONTEXT.md's "Retry" glossary entry), regardless of Retry
+// Status -- unlike Sync Now, it bypasses the attempts < max_attempts gate.
+// The request responds immediately; the row itself is expected to keep
+// showing "Retrying now..." (retry_status="retrying_now") until the next
+// Failed Syncs refetch reflects the outcome.
+export function useRetryFailedSync() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (recordingId: string) =>
+      apiFetch<void>(`/api/admin/sync/failed/${encodeURIComponent(recordingId)}/retry`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: cloudSyncKeys.failedSyncs() });
       queryClient.invalidateQueries({ queryKey: cloudSyncKeys.status() });
     },
   });
