@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -298,7 +300,8 @@ func (s *Service) dispatchWorker(recordingID string, localAbsPath string, claim 
 		fi, err := os.Stat(localAbsPath)
 		if err != nil {
 			nextAttempt := time.Now().Add(s.getBackoff(claim.Attempts))
-			s.markErrorSafely(recordingID, "local_missing", err.Error(), nextAttempt)
+			detail := s.summarizeError(recordingID, "local_missing", err)
+			s.markErrorSafely(recordingID, "local_missing", detail, nextAttempt)
 			return
 		}
 
@@ -342,7 +345,8 @@ func (s *Service) dispatchWorker(recordingID string, localAbsPath string, claim 
 
 		if err != nil {
 			nextAttempt := time.Now().Add(s.getBackoff(claim.Attempts))
-			s.markErrorSafely(recordingID, "copy_failed", err.Error(), nextAttempt)
+			detail := s.summarizeError(recordingID, "copy_failed", err)
+			s.markErrorSafely(recordingID, "copy_failed", detail, nextAttempt)
 			return
 		}
 
@@ -365,7 +369,7 @@ func (s *Service) dispatchWorker(recordingID string, localAbsPath string, claim 
 		if statErr != nil || !found || size != fi.Size() {
 			errMsg := "file size mismatch or not found"
 			if statErr != nil {
-				errMsg = statErr.Error()
+				errMsg = s.summarizeError(recordingID, "verify_failed", statErr)
 			}
 			nextAttempt := time.Now().Add(s.getBackoff(claim.Attempts))
 			s.markErrorSafely(recordingID, "verify_failed", errMsg, nextAttempt)
@@ -385,6 +389,35 @@ func (s *Service) markErrorSafely(recordingID string, errClass, errMsg string, n
 	} else if rows == 0 {
 		s.logger.Warn("mark error ignored: lease lost or stolen", zap.String("recording_id", recordingID))
 	}
+}
+
+// maxErrorDetailLen bounds how much of a raw error we persist to the
+// admin-facing error column; the full error is always logged separately.
+const maxErrorDetailLen = 500
+
+// secretLikePattern redacts token/secret/password/key-shaped substrings
+// before an error detail is persisted to the DB and rendered on the admin
+// dashboard. Belt-and-braces: none of our current rclone backends leak
+// credentials into error text, but remote types vary and this column is
+// long-lived, unlike a log line.
+var secretLikePattern = regexp.MustCompile(`(?i)(token|secret|password|api[_-]?key)\S*["']?\s*[:=]\s*\S+`)
+
+// summarizeError logs the full, untruncated error for operators and
+// returns a single-line, length-bounded, secret-scrubbed detail suitable
+// for the Failed Sync "reason" shown on the admin dashboard.
+func (s *Service) summarizeError(recordingID, errClass string, err error) string {
+	s.logger.Error("cloud sync failed",
+		zap.String("recording_id", recordingID),
+		zap.String("error_class", errClass),
+		zap.Error(err),
+	)
+
+	detail := strings.Join(strings.Fields(err.Error()), " ")
+	detail = secretLikePattern.ReplaceAllString(detail, "[redacted]")
+	if len(detail) > maxErrorDetailLen {
+		detail = detail[:maxErrorDetailLen] + "… (truncated)"
+	}
+	return detail
 }
 
 func (s *Service) markSyncedSafely(recordingID string, remoteFileID string, size int64) {
