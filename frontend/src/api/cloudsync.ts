@@ -17,9 +17,28 @@ export interface SyncStatus {
   last_reconcile_at?: string | null;
 }
 
+// RetryStatus mirrors the backend's derived Retry Status for a Failed Sync:
+// "retrying" (still eligible for automatic retry), "retrying_now" (a retry
+// attempt is in flight this instant, i.e. mid-retry), or "exhausted"
+// (attempts >= max_attempts, automatic retries have given up). See
+// CONTEXT.md for the glossary.
+export type RetryStatus = 'retrying' | 'retrying_now' | 'exhausted';
+
+export interface FailedSync {
+  recording_id: string;
+  title: string;
+  error_class: string | null;
+  error: string | null;
+  attempts: number;
+  last_attempt_at: string | null;
+  next_attempt_at: string | null;
+  retry_status: RetryStatus;
+}
+
 export const cloudSyncKeys = {
   all: ['cloudsync'] as const,
   status: () => [...cloudSyncKeys.all, 'status'] as const,
+  failedSyncs: () => [...cloudSyncKeys.all, 'failed'] as const,
 };
 
 export function useSyncStatus() {
@@ -27,6 +46,18 @@ export function useSyncStatus() {
     queryKey: cloudSyncKeys.status(),
     queryFn: () => apiFetch<SyncStatus>('/api/admin/sync/status'),
     refetchInterval: 5000,
+  });
+}
+
+// useFailedSyncs fetches the Failed Syncs list on demand (e.g. once the
+// failures section is expanded), separately from the aggregate /status
+// endpoint. Pass `enabled: false` to defer fetching until the admin
+// actually wants to see the list.
+export function useFailedSyncs(enabled: boolean) {
+  return useQuery({
+    queryKey: cloudSyncKeys.failedSyncs(),
+    queryFn: () => apiFetch<{ failed_syncs: FailedSync[] }>('/api/admin/sync/failed'),
+    enabled,
   });
 }
 
