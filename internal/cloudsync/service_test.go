@@ -22,6 +22,9 @@ type fakeStateStore struct {
 	markErrorCnt int
 	markSyncCnt  int
 	heartbeat    func(ctx context.Context, recordingID, owner string, ttl time.Duration) (int64, error)
+
+	listFailedSyncsResult []FailedSync
+	listFailedSyncsErr    error
 }
 
 func newFakeStateStore() *fakeStateStore {
@@ -122,6 +125,13 @@ func (f *fakeStateStore) CountByStatus(ctx context.Context) (map[string]int, err
 		counts[s.Status]++
 	}
 	return counts, nil
+}
+
+func (f *fakeStateStore) ListFailedSyncs(ctx context.Context) ([]FailedSync, error) {
+	if f.listFailedSyncsErr != nil {
+		return nil, f.listFailedSyncsErr
+	}
+	return f.listFailedSyncsResult, nil
 }
 
 type fakeRemoteClient struct {

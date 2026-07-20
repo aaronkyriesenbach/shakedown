@@ -1,9 +1,117 @@
 import { useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { Cloud, CloudOff, RefreshCw, CheckCircle2, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Cloud, CloudOff, RefreshCw, CheckCircle2, XCircle, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useSyncStatus, useRunSync, useTestRemote, useSaveRemote } from '@/api/cloudsync';
+import { Badge } from '@/components/ui/badge';
+import { useSyncStatus, useRunSync, useTestRemote, useSaveRemote, useFailedSyncs } from '@/api/cloudsync';
+import type { FailedSync, RetryStatus } from '@/api/cloudsync';
 import { ApiError } from '@/api/client';
+
+// retryStatusLabel renders the Retry Status glossary term (see CONTEXT.md)
+// for a Failed Sync row: "Retrying now" for a row currently mid-retry,
+// "Retrying" for one still eligible for automatic retry, and "Exhausted"
+// once automatic retries have given up.
+function retryStatusLabel(status: RetryStatus): string {
+  switch (status) {
+    case 'retrying_now':
+      return 'Retrying now';
+    case 'retrying':
+      return 'Retrying';
+    case 'exhausted':
+      return 'Exhausted';
+  }
+}
+
+function retryStatusBadgeClassName(status: RetryStatus): string {
+  switch (status) {
+    case 'retrying_now':
+      return 'border-blue-500/20 bg-blue-500/10 text-blue-500';
+    case 'retrying':
+      return 'border-amber-500/20 bg-amber-500/10 text-amber-500';
+    case 'exhausted':
+      return 'border-destructive/20 bg-destructive/10 text-destructive';
+  }
+}
+
+// FailedSyncRow renders a single Failed Sync: title, Error Class, the
+// free-text error detail, and a Retry Status indicator. Deliberately kept
+// as its own row component (rather than inlining a per-recording action
+// awkwardly) so a follow-up ticket can add a Retry button here without
+// reshaping this list.
+function FailedSyncRow({ row }: { row: FailedSync }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-md border bg-background/60 p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0 space-y-1">
+        <p className="truncate text-sm font-medium">{row.title}</p>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          {row.error_class && (
+            <span className="rounded bg-muted px-1.5 py-0.5 font-mono">{row.error_class}</span>
+          )}
+          {row.error && <span className="truncate">{row.error}</span>}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Attempts: {row.attempts}
+          {row.last_attempt_at && ` · Last attempt: ${new Date(row.last_attempt_at).toLocaleString()}`}
+        </p>
+      </div>
+      <Badge variant="outline" className={retryStatusBadgeClassName(row.retry_status)}>
+        {retryStatusLabel(row.retry_status)}
+      </Badge>
+    </div>
+  );
+}
+
+// FailedSyncsSection is the expandable Failed Syncs list within
+// CloudSyncCard: which recordings are failing, why (Error Class + error
+// detail), and whether they're still Retrying or Exhausted. Fetched
+// on-demand once expanded, separately from the aggregate /status endpoint.
+function FailedSyncsSection({ errorCount }: { errorCount: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const { data, isLoading, isError, error } = useFailedSyncs(expanded);
+
+  if (errorCount <= 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2">
+      <Button
+        variant="outline"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full justify-between"
+      >
+        <span className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-destructive" />
+          Failed Syncs ({errorCount})
+        </span>
+        {expanded ? <ChevronUp className="ml-2 h-4 w-4" /> : <ChevronDown className="ml-2 h-4 w-4" />}
+      </Button>
+
+      {expanded && (
+        <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+          {isLoading && (
+            <p className="text-sm text-muted-foreground">Loading failed syncs...</p>
+          )}
+          {isError && (
+            <p className="text-sm text-destructive">
+              {error instanceof ApiError ? error.userMessage : error.message}
+            </p>
+          )}
+          {!isLoading && !isError && data && data.failed_syncs.length === 0 && (
+            <p className="text-sm text-muted-foreground">No failed syncs.</p>
+          )}
+          {!isLoading && !isError && data && data.failed_syncs.length > 0 && (
+            <div className="space-y-2">
+              {data.failed_syncs.map((row) => (
+                <FailedSyncRow key={row.recording_id} row={row} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function CloudSyncCard() {
   const { data: status, isLoading } = useSyncStatus();
@@ -103,6 +211,10 @@ export function CloudSyncCard() {
         <p className="text-xs text-muted-foreground">
           Last reconcile: {new Date(status.last_reconcile_at).toLocaleString()}
         </p>
+      )}
+
+      {status.enabled && status.counts && (
+        <FailedSyncsSection errorCount={status.counts.error} />
       )}
 
       {runSync.isError && (
