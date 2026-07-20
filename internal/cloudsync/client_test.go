@@ -98,8 +98,8 @@ func TestClient_Copy(t *testing.T) {
 	if !strings.Contains(err.Error(), "rclone copyto failed") {
 		t.Fatalf("bad error message: %v", err)
 	}
-	if strings.Contains(err.Error(), "boom") {
-		t.Fatalf("error should be sanitized: %v", err)
+	if !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected underlying error detail to be preserved: %v", err)
 	}
 }
 
@@ -181,5 +181,29 @@ func TestClient_WriteRemoteConfig(t *testing.T) {
 	err = client.WriteRemoteConfig(context.Background(), "[wrong]\ntype=drive\n")
 	if err == nil {
 		t.Fatal("expected error for wrong section")
+	}
+}
+
+func TestDefaultCommandRunner_SurfacesStderr(t *testing.T) {
+	runner := &defaultCommandRunner{}
+
+	_, err := runner.Run(context.Background(), "sh", "-c", "echo 'boom: quota exceeded' 1>&2; exit 1")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "boom: quota exceeded") {
+		t.Fatalf("expected stderr to be surfaced in error, got %v", err)
+	}
+}
+
+func TestDefaultCommandRunner_NoStderrFallsBackToExitError(t *testing.T) {
+	runner := &defaultCommandRunner{}
+
+	_, err := runner.Run(context.Background(), "sh", "-c", "exit 1")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "exit status 1") {
+		t.Fatalf("expected plain exit error when stderr is empty, got %v", err)
 	}
 }

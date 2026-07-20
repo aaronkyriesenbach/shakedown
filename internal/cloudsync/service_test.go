@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -490,4 +491,36 @@ func TestService_AcceptanceMatrix(t *testing.T) {
 	if !foundEligiblePath {
 		t.Errorf("eligible copy not performed to expected path")
 	}
+}
+
+func TestService_SummarizeError(t *testing.T) {
+	svc := NewService(newFakeStateStore(), &fakeRemoteClient{}, nil, &fakeStorage{}, zap.NewNop(), Config{})
+
+	t.Run("collapses whitespace and newlines", func(t *testing.T) {
+		detail := svc.summarizeError("rec1", "copy_failed", errors.New("line one\nline two\ttabbed"))
+		if detail != "line one line two tabbed" {
+			t.Fatalf("expected single-line detail, got %q", detail)
+		}
+	})
+
+	t.Run("redacts secret-shaped substrings", func(t *testing.T) {
+		detail := svc.summarizeError("rec1", "copy_failed", errors.New(`auth failed: token="ya29.a0ARabc123"`))
+		if strings.Contains(detail, "ya29.a0ARabc123") {
+			t.Fatalf("expected token to be redacted, got %q", detail)
+		}
+		if !strings.Contains(detail, "[redacted]") {
+			t.Fatalf("expected redaction marker, got %q", detail)
+		}
+	})
+
+	t.Run("truncates long details", func(t *testing.T) {
+		long := strings.Repeat("x", maxErrorDetailLen+100)
+		detail := svc.summarizeError("rec1", "copy_failed", errors.New(long))
+		if !strings.HasSuffix(detail, "(truncated)") {
+			t.Fatalf("expected truncated detail, got suffix %q", detail[len(detail)-20:])
+		}
+		if len(detail) >= len(long) {
+			t.Fatalf("expected detail to be shorter than original: %d vs %d", len(detail), len(long))
+		}
+	})
 }

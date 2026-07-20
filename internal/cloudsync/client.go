@@ -22,7 +22,17 @@ type defaultCommandRunner struct{}
 
 func (d *defaultCommandRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
-	return cmd.Output()
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && len(bytes.TrimSpace(exitErr.Stderr)) > 0 {
+			// Output() captures stderr onto the ExitError but doesn't include it
+			// in Error(); surface it so callers see rclone's actual diagnostic
+			// (e.g. the underlying API error), not just "exit status 1".
+			return out, fmt.Errorf("%w: %s", err, bytes.TrimSpace(exitErr.Stderr))
+		}
+	}
+	return out, err
 }
 
 type RemoteClient interface {
@@ -54,17 +64,22 @@ func NewRcloneClient(runner CommandRunner, rcloneBin, configPath, remote string,
 	}
 }
 
-func sanitizeError(op string, err error) error {
+// wrapOpError adds rclone-operation context to err without discarding the
+// underlying detail (e.g. rclone's stderr, wrapped in by the CommandRunner).
+// Callers that need to persist a display-safe summary should go through
+// Service.summarizeError rather than truncating/scrubbing here, since this
+// is also what ends up in application logs.
+func wrapOpError(op string, err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("rclone %s failed", op)
+	return fmt.Errorf("rclone %s failed: %w", op, err)
 }
 
 func (c *rcloneClient) Version(ctx context.Context) (string, error) {
 	out, err := c.runner.Run(ctx, c.rcloneBin, "--config", c.configPath, "version")
 	if err != nil {
-		return "", sanitizeError("version", err)
+		return "", wrapOpError("version", err)
 	}
 	return string(out), nil
 }
@@ -72,7 +87,7 @@ func (c *rcloneClient) Version(ctx context.Context) (string, error) {
 func (c *rcloneClient) RemoteExists(ctx context.Context) (bool, error) {
 	out, err := c.runner.Run(ctx, c.rcloneBin, "--config", c.configPath, "listremotes")
 	if err != nil {
-		return false, sanitizeError("listremotes", err)
+		return false, wrapOpError("listremotes", err)
 	}
 	lines := strings.Split(string(out), "\n")
 	target := c.remote + ":"
@@ -127,7 +142,7 @@ func (c *rcloneClient) Copy(ctx context.Context, localAbsPath, remotePath string
 
 	_, err := c.runner.Run(ctx, c.rcloneBin, args...)
 	if err != nil {
-		return sanitizeError("copyto", err)
+		return wrapOpError("copyto", err)
 	}
 	return nil
 }
@@ -140,7 +155,7 @@ type lsjsonItem struct {
 func (c *rcloneClient) StatSize(ctx context.Context, remotePath string) (int64, bool, error) {
 	out, err := c.runner.Run(ctx, c.rcloneBin, "--config", c.configPath, "lsjson", "--stat", c.remote+":"+remotePath)
 	if err != nil {
-		return 0, false, sanitizeError("lsjson", err)
+		return 0, false, wrapOpError("lsjson", err)
 	}
 
 	out = bytes.TrimSpace(out)
@@ -150,7 +165,7 @@ func (c *rcloneClient) StatSize(ctx context.Context, remotePath string) (int64, 
 
 	var item lsjsonItem
 	if err := json.Unmarshal(out, &item); err != nil {
-		return 0, false, sanitizeError("lsjson parse", err)
+		return 0, false, wrapOpError("lsjson parse", err)
 	}
 
 	if item.IsDir {
