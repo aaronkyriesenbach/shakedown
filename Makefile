@@ -1,4 +1,4 @@
-.PHONY: build dev test lint
+.PHONY: build dev test test-integration lint
 
 build:
 	go build ./...
@@ -8,6 +8,9 @@ dev:
 
 test:
 	go test ./...
+
+test-integration:
+	go test -tags=integration ./...
 
 lint:
 	@if command -v golangci-lint > /dev/null 2>&1; then \

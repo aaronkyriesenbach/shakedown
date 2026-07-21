@@ -44,6 +44,72 @@ When a recording is uploaded, the server processes it through a background worke
 3. **Generating waveform** — create waveform data via `audiowaveform`
 4. **Extracting thumbnail** — for video files, extract a poster frame via `ffmpeg`
 
+## Cloud sync (rclone)
+
+Shakedown can automatically sync your recordings to any cloud storage provider supported by [rclone](https://rclone.org/).
+
+### Prerequisites
+
+- **Docker**: `rclone` is bundled in the official Docker image.
+- **Non-Docker**: Install `rclone` as a system dependency (similar to `ffmpeg` and `audiowaveform`).
+
+### Configuration
+
+Every user recording is pushed to a single configured destination. This feature is instance-wide and restricted to administrators.
+
+| Variable | Default | Description |
+|---|---|---|
+| `CLOUD_SYNC_ENABLED` | `false` | Enable/disable automatic cloud syncing |
+| `CLOUD_SYNC_RCLONE_BIN` | `rclone` | Path to the rclone binary |
+| `RCLONE_CONFIG` | `/data/rclone/rclone.conf` | Path to the rclone configuration file |
+| `CLOUD_SYNC_REMOTE` | — | Name of the rclone remote to use |
+| `CLOUD_SYNC_ROOT` | `Shakedown` | Root directory (or bucket name) at the remote |
+| `CLOUD_SYNC_PATH_TEMPLATE` | `{year}/{date}/{title}.{ext}` | Path template for synced files |
+| `CLOUD_SYNC_INTERVAL_SECONDS` | `3600` | How often to scan for unsynced recordings |
+| `CLOUD_SYNC_MAX_WORKERS` | `2` | Concurrent sync workers |
+| `CLOUD_SYNC_MAX_ATTEMPTS` | `5` | Max retry attempts per file |
+| `CLOUD_SYNC_LEASE_TTL_SECONDS` | `900` | Internal lease duration for sync tasks |
+| `CLOUD_SYNC_BACKOFF_BASE_SECONDS` | `60` | Base delay for exponential backoff |
+| `CLOUD_SYNC_TPS_LIMIT` | `0` | rclone transactions per second limit (0 = unlimited) |
+
+### Path templates
+
+The `CLOUD_SYNC_PATH_TEMPLATE` supports these tokens:
+
+- `{year}`: Year of recording (e.g. `2024`)
+- `{month}`: Month of recording (e.g. `05`)
+- `{date}`: Full date of recording (e.g. `2024-05-20`)
+- `{title}`: Sanitized recording title
+- `{ext}`: File extension (e.g. `mp3`, `mp4`)
+- `{id}`: Recording's short ID
+
+### Setup methods
+
+1. **Admin UI**: Paste an rclone remote-config block (the output of `rclone config show <remote>`) into the Cloud Sync card on the `/admin` page.
+2. **Manual**: Place a pre-configured `rclone.conf` at the path specified by `RCLONE_CONFIG`.
+
+### Google Drive Example
+
+1. Run `rclone config` locally.
+2. Create a new remote of type `drive`.
+3. Use the `drive.file` scope for least-privilege access (restricts Shakedown to files it creates).
+4. **Important**: Using your own OAuth `client_id` (registered in Google Cloud Console) provides durable, non-expiring tokens. The rclone built-in client_id works out of the box but is rate-limited (~2 files/s) and intended for casual use.
+
+### Security Notes
+
+- **Secrets**: `rclone.conf` contains sensitive credentials. It should be stored securely (0600 permissions). NEVER commit this file or expose its contents in logs.
+- **DISABLE_AUTH**: Do NOT enable cloud sync while `DISABLE_AUTH=true` is publicly reachable. In `internal/auth/middleware.go`, `DevAuth` makes every request a synthetic admin user:
+  > DevAuth injects a synthetic local dev user into every request... Role: "admin"
+  This means ANYONE could trigger syncs or reconfigure your remote if the instance is exposed.
+
+### Destination Note
+
+Point `CLOUD_SYNC_ROOT` at a **dedicated folder**.
+- `rclone copyto` will overwrite a file if one already exists at the computed remote path.
+- For bucket-style backends (S3, B2, GCS), the first segment of `CLOUD_SYNC_ROOT` is treated as the bucket name and **must already exist**.
+
+Any rclone backend works (S3, Dropbox, OneDrive, SFTP, etc.). Google Drive is just one example.
+
 ## Prerequisites
 
 | Dependency | Version | Notes |

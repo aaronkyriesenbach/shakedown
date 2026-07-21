@@ -90,3 +90,7 @@ func UserFromContext(ctx context.Context) *User {
 	user, _ := ctx.Value(userContextKey).(*User)
 	return user
 }
+
+func WithUser(ctx context.Context, u *User) context.Context {
+	return context.WithValue(ctx, userContextKey, u)
+}

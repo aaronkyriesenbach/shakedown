@@ -49,10 +49,11 @@ FROM alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d650
 LABEL org.opencontainers.image.source="https://github.com/aaronkyriesenbach/shakedown" \
       org.opencontainers.image.description="Self-hosted recording library"
 
-# Install ffmpeg, ca-certificates, and audiowaveform runtime deps
+# Install ffmpeg, ca-certificates, rclone, and audiowaveform runtime deps
 RUN apk add --no-cache \
     ffmpeg \
     ca-certificates \
+    rclone \
     boost1.84-filesystem \
     boost1.84-program_options \
     libmad \
@@ -71,6 +72,7 @@ RUN addgroup -g 1000 shakedown \
 COPY --from=go-builder --chmod=755 --chown=1000:1000 /shakedown /shakedown
 
 RUN mkdir -p /data && chown 1000:1000 /data
+RUN mkdir -p /data/rclone && chmod 0700 /data/rclone && chown 1000:1000 /data/rclone
 
 USER 1000
 WORKDIR /home/shakedown

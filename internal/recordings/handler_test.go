@@ -1,12 +1,17 @@
 package recordings
 
 import (
+	"bytes"
+	"context"
+	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"shakedown/internal/auth"
 	"shakedown/internal/config"
 )
 
@@ -78,5 +83,109 @@ func TestSnippetFilename(t *testing.T) {
 	}
 	if got := SnippetFilename("video"); got != "snippet.mp4" {
 		t.Errorf("video: got %q, want snippet.mp4", got)
+	}
+}
+
+type fakeRepo struct {
+	RecordingRepository
+	failUpdateStoragePath bool
+}
+
+func (f *fakeRepo) Create(ctx context.Context, input CreateRecordingInput) (*Recording, error) {
+	return &Recording{ID: "fake-id", FileExt: input.FileExt}, nil
+}
+
+func (f *fakeRepo) UpdateStoragePath(ctx context.Context, id, path string) error {
+	if f.failUpdateStoragePath {
+		return context.DeadlineExceeded // arbitrary error
+	}
+	return nil
+}
+
+func (f *fakeRepo) UpdateProcessingStep(ctx context.Context, id, step string) error {
+	return nil
+}
+
+func (f *fakeRepo) UpdateProcessingResult(ctx context.Context, id string, duration float64, channels, sampleRate, bitrate int, hasAudio, hasVideo bool, codec *string, hasWaveform, hasThumbnail bool, width, height *int) error {
+	return nil
+}
+
+func TestUpload_HookCalled(t *testing.T) {
+	cfg := &config.Config{
+		StorageRoot:          t.TempDir(),
+		VideoUploadMaxSizeMB: 10,
+	}
+	store, _ := NewLocalStorage(cfg.StorageRoot)
+	svc := NewService(&fakeRepo{}, store, zap.NewNop(), 1, 1)
+	h := NewHandler(svc, cfg, zap.NewNop())
+
+	hookCalled := false
+	var hookedID string
+	h.OnRecordingReady = func(id string) {
+		hookCalled = true
+		hookedID = id
+	}
+
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "test.mp3")
+	part.Write([]byte{0x49, 0x44, 0x33, 0x00, 0x00}) // fake ID3 tag to pass magic bytes
+	writer.Close()
+
+	req := httptest.NewRequest("POST", "/", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Add mock user to context to pass auth check
+	ctx := auth.WithUser(req.Context(), &auth.User{ID: "user1"})
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	h.upload(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d. Body: %s", w.Code, w.Body.String())
+	}
+	if !hookCalled {
+		t.Fatal("expected hook to be called, but it wasn't")
+	}
+	if hookedID != "fake-id" {
+		t.Fatalf("expected hook to receive 'fake-id', got %s", hookedID)
+	}
+}
+
+func TestUpload_HookNotCalledOnDBError(t *testing.T) {
+	cfg := &config.Config{
+		StorageRoot:          t.TempDir(),
+		VideoUploadMaxSizeMB: 10,
+	}
+	store, _ := NewLocalStorage(cfg.StorageRoot)
+	svc := NewService(&fakeRepo{failUpdateStoragePath: true}, store, zap.NewNop(), 1, 1)
+	h := NewHandler(svc, cfg, zap.NewNop())
+
+	hookCalled := false
+	h.OnRecordingReady = func(id string) {
+		hookCalled = true
+	}
+
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "test.mp3")
+	part.Write([]byte{0x49, 0x44, 0x33, 0x00, 0x00})
+	writer.Close()
+
+	req := httptest.NewRequest("POST", "/", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	ctx := auth.WithUser(req.Context(), &auth.User{ID: "user1"})
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	h.upload(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d. Body: %s", w.Code, w.Body.String())
+	}
+	if hookCalled {
+		t.Fatal("expected hook NOT to be called when DB update fails, but it was")
 	}
 }
