@@ -34,8 +34,22 @@ type Config struct {
 	VideoUploadMaxSizeMB          int64 `envconfig:"VIDEO_UPLOAD_MAX_SIZE_MB" default:"4096"`
 
 	// Recovery loop configuration
-	RecoveryScanIntervalSeconds  int `envconfig:"RECOVERY_SCAN_INTERVAL_SECONDS" default:"120"`
+	RecoveryScanIntervalSeconds   int `envconfig:"RECOVERY_SCAN_INTERVAL_SECONDS" default:"120"`
 	RecoveryStaleThresholdSeconds int `envconfig:"RECOVERY_STALE_THRESHOLD_SECONDS" default:"3900"`
+
+	// Cloud sync configuration
+	CloudSyncEnabled            bool   `envconfig:"CLOUD_SYNC_ENABLED" default:"false"`
+	CloudSyncRcloneBin          string `envconfig:"CLOUD_SYNC_RCLONE_BIN" default:"rclone"`
+	RcloneConfigPath            string `envconfig:"RCLONE_CONFIG" default:"/data/rclone/rclone.conf"`
+	CloudSyncRemote             string `envconfig:"CLOUD_SYNC_REMOTE" default:""`
+	CloudSyncRoot               string `envconfig:"CLOUD_SYNC_ROOT" default:"Shakedown"`
+	CloudSyncPathTemplate       string `envconfig:"CLOUD_SYNC_PATH_TEMPLATE" default:"{year}/{date}/{title}.{ext}"`
+	CloudSyncIntervalSeconds    int    `envconfig:"CLOUD_SYNC_INTERVAL_SECONDS" default:"3600"`
+	CloudSyncMaxWorkers         int    `envconfig:"CLOUD_SYNC_MAX_WORKERS" default:"2"`
+	CloudSyncMaxAttempts        int    `envconfig:"CLOUD_SYNC_MAX_ATTEMPTS" default:"5"`
+	CloudSyncLeaseTTLSeconds    int    `envconfig:"CLOUD_SYNC_LEASE_TTL_SECONDS" default:"900"`
+	CloudSyncBackoffBaseSeconds int    `envconfig:"CLOUD_SYNC_BACKOFF_BASE_SECONDS" default:"60"`
+	CloudSyncTPSLimit           int    `envconfig:"CLOUD_SYNC_TPS_LIMIT" default:"0"`
 }
 
 func Load() (*Config, error) {

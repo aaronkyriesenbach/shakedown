@@ -39,10 +39,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     throw new ApiError(res.status, `API ${res.status}: ${text}`, text);
   }
 
-  // Handle 204 No Content
-  if (res.status === 204) {
+  // Handle empty response bodies (e.g. 204 No Content, or 202 Accepted with
+  // no body). Read as text first since an empty string is not valid JSON.
+  const text = await res.text();
+  if (!text) {
     return undefined as T;
   }
 
-  return res.json() as Promise<T>;
+  return JSON.parse(text) as T;
 }

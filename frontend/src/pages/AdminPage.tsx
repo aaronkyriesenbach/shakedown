@@ -3,6 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { AdminDump } from '@/components/admin/AdminDump';
 import { UserManagement } from '@/components/admin/UserManagement';
 
+import { CloudSyncCard } from '@/components/admin/CloudSyncCard';
+
 export default function AdminPage() {
   return (
     <div className="container max-w-4xl py-8 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -33,6 +35,12 @@ export default function AdminPage() {
           </CardHeader>
           <CardContent>
             <AdminDump />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <CloudSyncCard />
           </CardContent>
         </Card>
 

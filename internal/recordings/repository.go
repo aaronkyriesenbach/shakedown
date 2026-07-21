@@ -449,3 +449,63 @@ func (repo *Repository) CountAll(ctx context.Context) (int, error) {
 	}
 	return count, nil
 }
+
+type SyncCandidate struct {
+	ID            string
+	Title         string
+	FileExt       string
+	RecordedAt    time.Time
+	CreatedAt     time.Time
+	StoragePath   string
+	FileSizeBytes int64
+}
+
+func (repo *Repository) ListAllForSync(ctx context.Context, afterID string, limit int) ([]SyncCandidate, error) {
+	if afterID == "" {
+		afterID = "00000000-0000-0000-0000-000000000000"
+	}
+
+	query := `
+		SELECT id, title, file_ext, recorded_at, created_at, storage_path, file_size_bytes
+		FROM recordings
+		WHERE deleted_at IS NULL AND storage_path <> '' AND id > $1::uuid
+		ORDER BY id ASC LIMIT $2
+	`
+
+	rows, err := repo.db.Query(ctx, query, afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var candidates []SyncCandidate
+	for rows.Next() {
+		var c SyncCandidate
+
+		if err := rows.Scan(
+			&c.ID,
+			&c.Title,
+			&c.FileExt,
+			&c.RecordedAt,
+			&c.CreatedAt,
+			&c.StoragePath,
+			&c.FileSizeBytes,
+		); err != nil {
+			return nil, err
+		}
+		
+		
+		candidates = append(candidates, c)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return candidates, nil
+}
+
+func (r *Repository) UpdateStoragePath(ctx context.Context, id, storagePath string) error {
+	_, err := r.db.Exec(ctx, `UPDATE recordings SET storage_path=$2, updated_at=now() WHERE id=$1`, id, storagePath)
+	return err
+}

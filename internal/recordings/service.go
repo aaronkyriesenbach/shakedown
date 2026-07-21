@@ -8,9 +8,22 @@ import (
 	"go.uber.org/zap"
 )
 
+// RecordingRepository defines the data access methods needed by the service.
+type RecordingRepository interface {
+	Create(ctx context.Context, input CreateRecordingInput) (*Recording, error)
+	UpdateStoragePath(ctx context.Context, id, storagePath string) error
+	FindStuckRecordings(ctx context.Context, staleThreshold time.Duration) ([]Recording, error)
+	UpdateProcessingStep(ctx context.Context, id, step string) error
+	GetByID(ctx context.Context, id string) (*Recording, error)
+	List(ctx context.Context, f ListFilter) (*ListResult, error)
+	Update(ctx context.Context, id string, title *string, recordedAt *time.Time) (*Recording, error)
+	SoftDelete(ctx context.Context, id string) error
+	UpdateProcessingResult(ctx context.Context, id string, duration float64, channels, sampleRate, bitrate int, hasAudio, hasVideo bool, codec *string, hasWaveform, hasThumbnail bool, width, height *int) error
+}
+
 // Service wires together the repository, storage, and processing pipeline.
 type Service struct {
-	repo         *Repository
+	repo         RecordingRepository
 	storage      *LocalStorage
 	logger       *zap.Logger
 	audioSem     chan struct{}
@@ -20,7 +33,7 @@ type Service struct {
 }
 
 // NewService creates a new recordings Service with a bounded processing pool.
-func NewService(repo *Repository, storage *LocalStorage, logger *zap.Logger, maxAudioWorkers, maxVideoWorkers int) *Service {
+func NewService(repo RecordingRepository, storage *LocalStorage, logger *zap.Logger, maxAudioWorkers, maxVideoWorkers int) *Service {
 	if maxAudioWorkers <= 0 {
 		maxAudioWorkers = 4
 	}
