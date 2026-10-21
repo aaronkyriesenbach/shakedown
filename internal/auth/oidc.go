@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -14,9 +15,10 @@ import (
 
 // Provider wraps go-oidc provider with oauth2 config.
 type Provider struct {
-	provider    *oidc.Provider
-	verifier    *oidc.IDTokenVerifier
-	oauthConfig oauth2.Config
+	provider           *oidc.Provider
+	verifier           *oidc.IDTokenVerifier
+	oauthConfig        oauth2.Config
+	endSessionEndpoint string
 }
 
 // NewProvider creates and configures the OIDC provider.
@@ -36,11 +38,37 @@ func NewProvider(ctx context.Context, cfg *config.Config) (*Provider, error) {
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email", "groups"},
 	}
 
+	var discovery struct {
+		EndSessionEndpoint string `json:"end_session_endpoint"`
+	}
+	if err := provider.Claims(&discovery); err != nil {
+		return nil, fmt.Errorf("auth: failed to read OIDC discovery document: %w", err)
+	}
+
 	return &Provider{
-		provider:    provider,
-		verifier:    verifier,
-		oauthConfig: oauthConfig,
+		provider:           provider,
+		verifier:           verifier,
+		oauthConfig:        oauthConfig,
+		endSessionEndpoint: discovery.EndSessionEndpoint,
 	}, nil
+}
+
+// EndSessionURL is the RP-initiated logout URL, empty when the provider has no end_session_endpoint.
+func (p *Provider) EndSessionURL() string {
+	if p.endSessionEndpoint == "" {
+		return ""
+	}
+
+	endpoint, err := url.Parse(p.endSessionEndpoint)
+	if err != nil {
+		return ""
+	}
+
+	query := endpoint.Query()
+	query.Set("client_id", p.oauthConfig.ClientID)
+	endpoint.RawQuery = query.Encode()
+
+	return endpoint.String()
 }
 
 // AuthCodeURL generates the authorization URL with state and nonce.

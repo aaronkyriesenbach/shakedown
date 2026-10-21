@@ -165,6 +165,16 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 		MaxAge:  -1,
 		Expires: time.Unix(0, 0),
 	})
+
+	// Without ending the provider session too, the next login redirect signs the user straight back in.
+	if h.provider != nil {
+		if endSessionURL := h.provider.EndSessionURL(); endSessionURL != "" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"end_session_url": endSessionURL})
+			return
+		}
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

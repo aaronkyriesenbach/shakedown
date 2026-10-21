@@ -25,14 +25,18 @@ export function useMe() {
   });
 }
 
+export interface LogoutResult {
+  end_session_url?: string;
+}
+
 export function useLogout() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      apiFetch<void>('/api/auth/logout', { method: 'POST' }),
-    onSuccess: () => {
+      apiFetch<LogoutResult | undefined>('/api/auth/logout', { method: 'POST' }),
+    onSuccess: (result) => {
       queryClient.clear();
-      window.location.href = '/login';
+      window.location.href = result?.end_session_url ?? '/login';
     },
   });
 }
